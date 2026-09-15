@@ -37,7 +37,14 @@ void UPathFinding::ToggleBeginEnd(FVector WorldCoord)
 
 void UPathFinding::NextIteration()
 {
-	StepOnce();
+	// One step by default. Raise StepsPerIteration and this same button solves outright.
+	if (StepsPerIteration <= 1)
+	{
+		StepOnce();
+		return;
+	}
+
+	SolveAll(StepsPerIteration);
 }
 
 FGridPathQuery UPathFinding::MakeQuery() const

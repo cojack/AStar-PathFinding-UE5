@@ -85,6 +85,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters|Tiles")
 	TArray<int32> RestrictedTiles;
 
+	/**
+	 * How many steps one NextIteration() call runs. 1 is the step-by-step visualisation.
+	 * Set it high and the existing NEXT STEP button solves the whole path in one click,
+	 * which is what you want when inspecting the finished result rather than the process.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters", meta = (ClampMin = 1, UIMin = 1))
+	int32 StepsPerIteration = 1;
+
 	// Print algorithm status to the screen
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters")
 	bool bShowDebugMessages = true;

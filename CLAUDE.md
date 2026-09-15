@@ -145,6 +145,9 @@ PIE.
   `ToggleWall` places that.
 - `StepOnce()` is the entry point and returns `EPathStepResult`; `NextIteration()` is a void
   wrapper kept for the existing Blueprints. Editing locks on `bSearchBegun`.
+- `StepsPerIteration` (default 1) controls how much one `NextIteration()` does. Raising it
+  turns the existing NEXT STEP button into a solve-outright button without touching the
+  Widget Blueprint, which cannot be edited outside the editor.
 - `ResetCells()` clears walls *and* the search — it is the UI's "RESET CELLS", so it resets
   everything, not just the algorithm.
 - **World space.** The grid origin is world origin, not the owning actor. `GridToWorld` is
