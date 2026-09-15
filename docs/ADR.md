@@ -229,7 +229,7 @@ misdirect them. Final state: 0 errors, 0 warnings, 0 dangling imports.
 
 ## ADR-0011 — Target feature set: A\* and JPS first
 
-**Status:** Accepted, not yet implemented
+**Status:** Implemented (2026-09-15)
 
 **Context.** The reference product (Fab listing `c76da69d-73b9-42a1-b958-a29c3eaf07c8`)
 advertises a `UGPFManager` with five algorithms (A\*, Dijkstra, Greedy Best First, Theta\*,
@@ -345,3 +345,40 @@ Cost: one extra header and two small files.
 
 First run passed, which is also the first time these checks had ever executed — covering the
 two bugs fixed in [ADR-0006] and [ADR-0007]. Re-run after the plugin move: still passing.
+
+---
+
+## ADR-0015 — The goal is an ordinary node
+
+**Status:** Implemented (2026-09-15)
+
+**Context.** Inherited from the original implementation: `WeightSurroundingCells` returned true
+the instant it *touched* the goal, before evaluating it. The goal therefore never had a parent,
+never entered the open set, and its own entry cost was never counted.
+
+Two consequences, the second only visible once a second algorithm existed:
+
+1. Paths were not strictly optimal. Entering the goal diagonally costs `DiagonalCost` where a
+   straight approach costs `StraightCost`, and the search could not prefer the cheaper one
+   because it never priced that step.
+2. A\* and JPS could not be compared. Neither reported a true total, so an equivalence check
+   between them would have been meaningless — and equivalence against A\* is the only practical
+   way to verify a JPS implementation.
+
+**Decision.** The goal is relaxed, opened and closed like any other cell. The search ends when
+the goal is *selected* from the open set, which is textbook A\* termination.
+
+**Consequences.** Total path cost is genuinely optimal and `GetPathCost` means something. Both
+algorithms are comparable, which is what makes the randomised check in phase 5 possible.
+
+Net deletion, not addition: the `GoalParent` tracking, the empty-closed-set branch in
+`SelectFinalPath`, and the append-the-goal-by-hand branch in `BuildPath` all disappeared. Path
+reconstruction is now a plain walk of the parent chain from the goal.
+
+**Behaviour change:** a goal adjacent to the start now takes two steps rather than one — the
+first expands the start and opens the goal, the second selects it. The check for [ADR-0007]
+was updated to match, and it caught the change on the first run. The bug ADR-0007 fixed cannot
+recur, because the case it special-cased no longer exists.
+
+An impassable goal now correctly reports `NoPath` instead of being reachable, since `CanEnter`
+applies to it like any other cell.

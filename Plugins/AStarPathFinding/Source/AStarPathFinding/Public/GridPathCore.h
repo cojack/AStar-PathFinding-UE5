@@ -20,6 +20,20 @@ enum class EPathCellState : uint8
 	Path	UMETA(DisplayName = "Path")
 };
 
+/** Which search to run. */
+UENUM(BlueprintType)
+enum class EPathAlgorithm : uint8
+{
+	/** Best-first with an octile heuristic. Works on any grid. */
+	AStar			UMETA(DisplayName = "A*"),
+	/**
+	 * Jump Point Search. Much faster on open grids, but only correct when every move costs
+	 * the same and diagonals are allowed - it prunes on exactly those assumptions. A query
+	 * asking for it on a weighted or 4-connected grid falls back to A*.
+	 */
+	JumpPointSearch	UMETA(DisplayName = "Jump Point Search")
+};
+
 /** Outcome of a single pathfinding step. */
 UENUM(BlueprintType)
 enum class EPathStepResult : uint8
@@ -95,6 +109,9 @@ struct ASTARPATHFINDING_API FPathGrid
 
 	static TArray<FPathTileInfo> DefaultTileTable();
 
+	/** True when no passable tile costs more than the base move. Required by JPS. */
+	bool HasUniformCost() const;
+
 	/** Replaces the tile vocabulary and re-resolves DefaultTile / WallTile. Clears the grid. */
 	void SetTileTable(const TArray<FPathTileInfo>& InTable);
 
@@ -131,6 +148,8 @@ struct ASTARPATHFINDING_API FGridPathQuery
 	FIntPoint Start = FIntPoint(-1, -1);
 	FIntPoint Goal = FIntPoint(-1, -1);
 
+	EPathAlgorithm Algorithm = EPathAlgorithm::AStar;
+
 	bool bAllowDiagonal = true;
 	int32 StraightCost = 10;
 	int32 DiagonalCost = 14;
@@ -166,6 +185,14 @@ struct ASTARPATHFINDING_API FGridSearch
 	bool HasEnded() const { return bEnded; }
 	bool HasStarted() const { return bStarted; }
 
+	/** The algorithm actually running, which may differ from the one the query asked for. */
+	EPathAlgorithm GetAlgorithm() const { return Algorithm; }
+	/** True when the requested algorithm was not applicable and A* was substituted. */
+	bool DidAlgorithmFallBack() const { return bAlgorithmFellBack; }
+
+	/** Total cost of the built path, counting every step including the last. */
+	int32 GetPathCost(const FPathGrid& Grid) const;
+
 	/** The final path, start -> goal. Empty unless the status is PathFound. */
 	TArray<FIntPoint> BuildPath(const FPathGrid& Grid) const;
 
@@ -193,10 +220,29 @@ private:
 	bool bEnded = false;
 	EPathStepResult Status = EPathStepResult::NotStarted;
 
+	EPathAlgorithm Algorithm = EPathAlgorithm::AStar;
+	bool bAlgorithmFellBack = false;
+
 	/** Whether this query may enter a cell, applying the restrict and ignore filters. */
 	bool CanEnter(const FPathGrid& Grid, int32 Index) const;
-	bool ExpandNeighbours(const FPathGrid& Grid, int32 CenterIndex);
-	void Evaluate(const FPathGrid& Grid, int32 FromIndex, int32 ToIndex);
+
+	void Expand(const FPathGrid& Grid, int32 CenterIndex);
+	void ExpandAStar(const FPathGrid& Grid, int32 CenterIndex);
+	void ExpandJumpPoints(const FPathGrid& Grid, int32 CenterIndex);
+
+	/** Relaxes ToIndex when reaching it through FromIndex is cheaper. */
+	void Relax(const FPathGrid& Grid, int32 FromIndex, int32 ToIndex, int32 StepCost);
+
 	EPathStepResult SelectLightest(const FPathGrid& Grid);
 	void PaintPath();
+
+	// --- Jump Point Search ---
+
+	/** Scans from FromIndex along (dx, dy) for the next jump point. INDEX_NONE if none. */
+	int32 Jump(const FPathGrid& Grid, int32 FromIndex, int32 dx, int32 dy) const;
+	/** Whether an obstacle beside Coord forces a neighbour that pruning would otherwise drop. */
+	bool HasForcedNeighbour(const FPathGrid& Grid, FIntPoint Coord, int32 dx, int32 dy) const;
+	/** Directions still worth scanning from Coord, given the direction it was reached from. */
+	void PrunedDirections(const FPathGrid& Grid, FIntPoint Coord, int32 dx, int32 dy,
+		TArray<FIntPoint>& OutDirections) const;
 };

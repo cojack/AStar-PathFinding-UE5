@@ -8,6 +8,19 @@ TArray<FPathTileInfo> FPathGrid::DefaultTileTable()
 	return { FPathTileInfo(1, true, FColor::White), FPathTileInfo(1, false, FColor::Black) };
 }
 
+bool FPathGrid::HasUniformCost() const
+{
+	for (const FPathTileInfo& Info : TileTable)
+	{
+		if (Info.bPassable && Info.CostMultiplier != 1)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void FPathGrid::SetTileTable(const TArray<FPathTileInfo>& InTable)
 {
 	TileTable = InTable.Num() > 0 ? InTable : DefaultTileTable();
@@ -157,6 +170,9 @@ void FGridSearch::Reset()
 	bStarted = false;
 	bEnded = false;
 	Status = EPathStepResult::NotStarted;
+
+	Algorithm = EPathAlgorithm::AStar;
+	bAlgorithmFellBack = false;
 }
 
 bool FGridSearch::Begin(const FPathGrid& Grid, const FGridPathQuery& InQuery)
@@ -170,6 +186,17 @@ bool FGridSearch::Begin(const FPathGrid& Grid, const FGridPathQuery& InQuery)
 	if (StartIndex == INDEX_NONE || GoalIndex == INDEX_NONE)
 	{
 		return false;
+	}
+
+	// JPS prunes on the assumption that every move costs the same and that diagonals are
+	// available. Neither holds on a weighted or 4-connected grid, and running it anyway
+	// returns confidently wrong paths, so substitute A* and say so.
+	Algorithm = Query.Algorithm;
+	if (Algorithm == EPathAlgorithm::JumpPointSearch
+		&& (!Query.bAllowDiagonal || !Grid.HasUniformCost()))
+	{
+		Algorithm = EPathAlgorithm::AStar;
+		bAlgorithmFellBack = true;
 	}
 
 	const int32 CellCount = Grid.Num();
@@ -193,8 +220,16 @@ EPathStepResult FGridSearch::Step(const FPathGrid& Grid)
 	if (!bStarted)
 	{
 		bStarted = true;
-		// The start can already touch the goal, in which case there is nothing to expand
-		Status = ExpandNeighbours(Grid, StartIndex) ? EPathStepResult::PathFound : EPathStepResult::InProgress;
+
+		if (StartIndex == GoalIndex)
+		{
+			Status = EPathStepResult::PathFound;
+		}
+		else
+		{
+			Expand(Grid, StartIndex);
+			Status = EPathStepResult::InProgress;
+		}
 	}
 	else
 	{
@@ -226,6 +261,11 @@ EPathStepResult FGridSearch::Solve(const FPathGrid& Grid, int32 MaxIterations)
 
 bool FGridSearch::CanEnter(const FPathGrid& Grid, int32 Index) const
 {
+	if (Index == INDEX_NONE)
+	{
+		return false;
+	}
+
 	const uint8 Tile = Grid.TileAt(Index);
 
 	// A restriction always wins: it is the query refusing a tile it could otherwise use
@@ -243,7 +283,19 @@ bool FGridSearch::CanEnter(const FPathGrid& Grid, int32 Index) const
 	return Grid.TileInfoFor(Tile).bPassable;
 }
 
-bool FGridSearch::ExpandNeighbours(const FPathGrid& Grid, int32 CenterIndex)
+void FGridSearch::Expand(const FPathGrid& Grid, int32 CenterIndex)
+{
+	if (Algorithm == EPathAlgorithm::JumpPointSearch)
+	{
+		ExpandJumpPoints(Grid, CenterIndex);
+	}
+	else
+	{
+		ExpandAStar(Grid, CenterIndex);
+	}
+}
+
+void FGridSearch::ExpandAStar(const FPathGrid& Grid, int32 CenterIndex)
 {
 	const FIntPoint CenterCoord = Grid.IndexToCoord(CenterIndex);
 
@@ -261,55 +313,38 @@ bool FGridSearch::ExpandNeighbours(const FPathGrid& Grid, int32 CenterIndex)
 				continue; // Skip the corners
 			}
 
-			const int32 NeighbourIndex = Grid.CoordToIndex({ CenterCoord.X + i, CenterCoord.Y + j });
-
-			if (NeighbourIndex == INDEX_NONE)
-			{
-				continue;
-			}
-
-			if (NeighbourIndex == GoalIndex)
-			{
-				return true; // Goal found. Deliberately not evaluated, so it has no parent
-			}
+			const FIntPoint NeighbourCoord(CenterCoord.X + i, CenterCoord.Y + j);
+			const int32 NeighbourIndex = Grid.CoordToIndex(NeighbourCoord);
 
 			if (!CanEnter(Grid, NeighbourIndex))
 			{
 				continue;
 			}
 
-			const EPathCellState State = Membership[NeighbourIndex];
-			if (State != EPathCellState::Empty && State != EPathCellState::Open)
+			if (Membership[NeighbourIndex] == EPathCellState::Closed)
 			{
 				continue; // Already expanded
 			}
 
-			Evaluate(Grid, CenterIndex, NeighbourIndex);
-
-			OpenCells.AddUnique(NeighbourIndex);
+			Relax(Grid, CenterIndex, NeighbourIndex, Query.Distance(CenterCoord, NeighbourCoord));
 		}
 	}
-
-	return false;
 }
 
-void FGridSearch::Evaluate(const FPathGrid& Grid, int32 FromIndex, int32 ToIndex)
+void FGridSearch::Relax(const FPathGrid& Grid, int32 FromIndex, int32 ToIndex, int32 StepCost)
 {
-	const FIntPoint FromCoord = Grid.IndexToCoord(FromIndex);
-	const FIntPoint ToCoord = Grid.IndexToCoord(ToIndex);
-
-	// Entering a tile costs the base move scaled by that tile's multiplier. Clamped at 1
-	// because a cheaper-than-base tile would make the heuristic overestimate and the
-	// result would stop being optimal.
+	// Entering a tile costs the move scaled by that tile's multiplier. Clamped at 1 because
+	// a cheaper-than-base tile would make the heuristic overestimate and lose optimality.
 	const int32 Multiplier = FMath::Max(1, Grid.TileInfoAt(ToIndex).CostMultiplier);
-	const int32 NewStartDist = StartDist[FromIndex] + Query.Distance(FromCoord, ToCoord) * Multiplier;
+	const int32 NewStartDist = StartDist[FromIndex] + StepCost * Multiplier;
 
 	if (StartDist[ToIndex] < 0 || NewStartDist < StartDist[ToIndex])
 	{
 		StartDist[ToIndex] = NewStartDist;
-		Weight[ToIndex] = NewStartDist + Query.Distance(ToCoord, Query.Goal);
+		Weight[ToIndex] = NewStartDist + Query.Distance(Grid.IndexToCoord(ToIndex), Query.Goal);
 		Parent[ToIndex] = FromIndex;
 		Membership[ToIndex] = EPathCellState::Open;
+		OpenCells.AddUnique(ToIndex);
 	}
 }
 
@@ -348,19 +383,175 @@ EPathStepResult FGridSearch::SelectLightest(const FPathGrid& Grid)
 	Membership[LightestIndex] = EPathCellState::Closed;
 	OpenCells.Remove(LightestIndex);
 
-	return ExpandNeighbours(Grid, LightestIndex) ? EPathStepResult::PathFound : EPathStepResult::InProgress;
+	// The goal is an ordinary node: reaching it is only settled once it is selected, which
+	// is what makes the total cost - including the final step - actually optimal.
+	if (LightestIndex == GoalIndex)
+	{
+		return EPathStepResult::PathFound;
+	}
+
+	Expand(Grid, LightestIndex);
+
+	return EPathStepResult::InProgress;
 }
 
 void FGridSearch::PaintPath()
 {
-	if (ClosedCells.Num() == 0)
-	{
-		return; // The start touched the goal directly, nothing in between
-	}
-
-	for (int32 Index = ClosedCells.Last(); Index != INDEX_NONE; Index = Parent[Index])
+	for (int32 Index = GoalIndex; Index != INDEX_NONE; Index = Parent[Index])
 	{
 		Membership[Index] = EPathCellState::Path;
+	}
+}
+
+//////////////////////  Jump Point Search
+
+void FGridSearch::PrunedDirections(const FPathGrid& Grid, FIntPoint Coord, int32 dx, int32 dy,
+	TArray<FIntPoint>& OutDirections) const
+{
+	const auto Blocked = [&](int32 X, int32 Y)
+	{
+		return !CanEnter(Grid, Grid.CoordToIndex({ X, Y }));
+	};
+
+	if (dx != 0 && dy != 0)
+	{
+		// Natural successors of a diagonal move
+		OutDirections.Add({ dx, 0 });
+		OutDirections.Add({ 0, dy });
+		OutDirections.Add({ dx, dy });
+
+		// Forced by an obstacle behind us on either axis
+		if (Blocked(Coord.X - dx, Coord.Y))
+		{
+			OutDirections.Add({ -dx, dy });
+		}
+		if (Blocked(Coord.X, Coord.Y - dy))
+		{
+			OutDirections.Add({ dx, -dy });
+		}
+	}
+	else if (dx != 0)
+	{
+		OutDirections.Add({ dx, 0 });
+
+		if (Blocked(Coord.X, Coord.Y + 1))
+		{
+			OutDirections.Add({ dx, 1 });
+		}
+		if (Blocked(Coord.X, Coord.Y - 1))
+		{
+			OutDirections.Add({ dx, -1 });
+		}
+	}
+	else
+	{
+		OutDirections.Add({ 0, dy });
+
+		if (Blocked(Coord.X + 1, Coord.Y))
+		{
+			OutDirections.Add({ 1, dy });
+		}
+		if (Blocked(Coord.X - 1, Coord.Y))
+		{
+			OutDirections.Add({ -1, dy });
+		}
+	}
+}
+
+bool FGridSearch::HasForcedNeighbour(const FPathGrid& Grid, FIntPoint Coord, int32 dx, int32 dy) const
+{
+	const auto Open = [&](int32 X, int32 Y)
+	{
+		return CanEnter(Grid, Grid.CoordToIndex({ X, Y }));
+	};
+
+	if (dx != 0 && dy != 0)
+	{
+		return (!Open(Coord.X - dx, Coord.Y) && Open(Coord.X - dx, Coord.Y + dy))
+			|| (!Open(Coord.X, Coord.Y - dy) && Open(Coord.X + dx, Coord.Y - dy));
+	}
+
+	if (dx != 0)
+	{
+		return (!Open(Coord.X, Coord.Y + 1) && Open(Coord.X + dx, Coord.Y + 1))
+			|| (!Open(Coord.X, Coord.Y - 1) && Open(Coord.X + dx, Coord.Y - 1));
+	}
+
+	return (!Open(Coord.X + 1, Coord.Y) && Open(Coord.X + 1, Coord.Y + dy))
+		|| (!Open(Coord.X - 1, Coord.Y) && Open(Coord.X - 1, Coord.Y + dy));
+}
+
+int32 FGridSearch::Jump(const FPathGrid& Grid, int32 FromIndex, int32 dx, int32 dy) const
+{
+	FIntPoint Coord = Grid.IndexToCoord(FromIndex);
+
+	while (true)
+	{
+		Coord = FIntPoint(Coord.X + dx, Coord.Y + dy);
+		const int32 Index = Grid.CoordToIndex(Coord);
+
+		if (!CanEnter(Grid, Index))
+		{
+			return INDEX_NONE;
+		}
+
+		if (Index == GoalIndex || HasForcedNeighbour(Grid, Coord, dx, dy))
+		{
+			return Index;
+		}
+
+		// A diagonal run is a jump point if either straight component finds one
+		if (dx != 0 && dy != 0)
+		{
+			if (Jump(Grid, Index, dx, 0) != INDEX_NONE || Jump(Grid, Index, 0, dy) != INDEX_NONE)
+			{
+				return Index;
+			}
+		}
+	}
+}
+
+void FGridSearch::ExpandJumpPoints(const FPathGrid& Grid, int32 CenterIndex)
+{
+	const FIntPoint CenterCoord = Grid.IndexToCoord(CenterIndex);
+
+	TArray<FIntPoint> Directions;
+	const int32 ParentIndex = Parent[CenterIndex];
+
+	if (ParentIndex == INDEX_NONE)
+	{
+		// The start has no arrival direction, so every direction is worth scanning
+		for (int32 j = -1; j <= 1; j++)
+		{
+			for (int32 i = -1; i <= 1; i++)
+			{
+				if (i != 0 || j != 0)
+				{
+					Directions.Add({ i, j });
+				}
+			}
+		}
+	}
+	else
+	{
+		const FIntPoint ParentCoord = Grid.IndexToCoord(ParentIndex);
+		PrunedDirections(Grid, CenterCoord,
+			FMath::Clamp(CenterCoord.X - ParentCoord.X, -1, 1),
+			FMath::Clamp(CenterCoord.Y - ParentCoord.Y, -1, 1),
+			Directions);
+	}
+
+	for (const FIntPoint& Direction : Directions)
+	{
+		const int32 JumpIndex = Jump(Grid, CenterIndex, Direction.X, Direction.Y);
+
+		if (JumpIndex == INDEX_NONE || Membership[JumpIndex] == EPathCellState::Closed)
+		{
+			continue;
+		}
+
+		Relax(Grid, CenterIndex, JumpIndex,
+			Query.Distance(CenterCoord, Grid.IndexToCoord(JumpIndex)));
 	}
 }
 
@@ -368,31 +559,51 @@ TArray<FIntPoint> FGridSearch::BuildPath(const FPathGrid& Grid) const
 {
 	TArray<FIntPoint> Path;
 
-	if (Status != EPathStepResult::PathFound)
+	if (Status != EPathStepResult::PathFound || GoalIndex == INDEX_NONE)
 	{
 		return Path;
 	}
 
-	if (ClosedCells.Num() > 0)
+	// Walk the parent chain back from the goal
+	TArray<FIntPoint> Chain;
+	for (int32 Index = GoalIndex; Index != INDEX_NONE; Index = Parent[Index])
 	{
-		for (int32 Index = ClosedCells.Last(); Index != INDEX_NONE; Index = Parent[Index])
-		{
-			Path.Add(Grid.IndexToCoord(Index));
-		}
-		Algo::Reverse(Path); // Walked goal -> start, hand it back start -> goal
+		Chain.Add(Grid.IndexToCoord(Index));
 	}
-	else if (StartIndex != INDEX_NONE)
-	{
-		Path.Add(Grid.IndexToCoord(StartIndex));
-	}
+	Algo::Reverse(Chain);
 
-	// The goal is never expanded, so it is never on the parent chain
-	if (GoalIndex != INDEX_NONE)
+	// Consecutive chain entries are adjacent under A*, but a whole straight or diagonal run
+	// apart under JPS, so fill the gaps. A no-op for A*.
+	Path.Add(Chain[0]);
+	for (int32 i = 1; i < Chain.Num(); i++)
 	{
-		Path.Add(Grid.IndexToCoord(GoalIndex));
+		FIntPoint Current = Chain[i - 1];
+		const FIntPoint Target = Chain[i];
+		const int32 StepX = FMath::Clamp(Target.X - Current.X, -1, 1);
+		const int32 StepY = FMath::Clamp(Target.Y - Current.Y, -1, 1);
+
+		while (Current != Target)
+		{
+			Current = FIntPoint(Current.X + StepX, Current.Y + StepY);
+			Path.Add(Current);
+		}
 	}
 
 	return Path;
+}
+
+int32 FGridSearch::GetPathCost(const FPathGrid& Grid) const
+{
+	const TArray<FIntPoint> Path = BuildPath(Grid);
+
+	int32 Cost = 0;
+	for (int32 i = 1; i < Path.Num(); i++)
+	{
+		const int32 Multiplier = FMath::Max(1, Grid.TileInfoAt(Grid.CoordToIndex(Path[i])).CostMultiplier);
+		Cost += Query.Distance(Path[i - 1], Path[i]) * Multiplier;
+	}
+
+	return Cost;
 }
 
 EPathCellState FGridSearch::GetMembership(int32 Index) const

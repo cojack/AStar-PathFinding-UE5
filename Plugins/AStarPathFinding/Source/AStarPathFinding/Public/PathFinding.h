@@ -47,6 +47,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters", meta = (UIMin = 0))
 	float CellSize = 100.f;
 
+	// Which search to run. Jump Point Search falls back to A* on a weighted or
+	// 4-connected grid, where its pruning assumptions do not hold.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters|Movement")
+	EPathAlgorithm Algorithm = EPathAlgorithm::AStar;
+
 	// Cost of a horizontal or vertical move between neighbouring cells
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters|Movement", meta = (UIMin = 1))
 	int32 StraightCost = 10;
@@ -204,6 +209,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "PathFinding|Query")
 	EPathStepResult GetStatus() const;
+
+	// Total cost of the final path, counting every step. 0 until a path is found.
+	UFUNCTION(BlueprintPure, Category = "PathFinding|Query")
+	int32 GetPathCost() const;
+
+	// The algorithm actually running, which may differ from Algorithm if it fell back.
+	UFUNCTION(BlueprintPure, Category = "PathFinding|Query")
+	EPathAlgorithm GetActiveAlgorithm() const;
 
 	// Start cell coordinate, or (-1, -1) when unset.
 	UFUNCTION(BlueprintPure, Category = "PathFinding|Query")

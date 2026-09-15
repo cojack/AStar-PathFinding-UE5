@@ -84,7 +84,10 @@ namespace PathFindingChecks
 			UPathFinding* Grid = MakeGrid(5, 5);
 			Check(Grid->SetStartCell({ 0, 0 }), TEXT("Adjacent: start placed"));
 			Check(Grid->SetEndCell({ 1, 0 }), TEXT("Adjacent: end placed"));
-			Check(Grid->StepOnce() == EPathStepResult::PathFound, TEXT("Adjacent: found in one step"));
+			// The goal is an ordinary node now: step one expands the start and opens the goal,
+			// step two selects it. Two steps, and the final step's cost is actually counted.
+			Check(Grid->StepOnce() == EPathStepResult::InProgress, TEXT("Adjacent: first step expands"));
+			Check(Grid->StepOnce() == EPathStepResult::PathFound, TEXT("Adjacent: second step settles the goal"));
 
 			const TArray<FIntPoint> Path = Grid->GetFinalPath();
 			CheckEq(Path.Num(), 2, TEXT("Adjacent: path length"));
@@ -293,6 +296,100 @@ namespace PathFindingChecks
 			CheckEq(Comp->GetTileAt({ 1, 0 }), 0, TEXT("TileSet: cleared, grid back to the fallback table"));
 			Comp->SetWallAt({ 1, 0 }, true);
 			Check(Comp->GetCellState({ 1, 0 }) == EPathCellState::Wall, TEXT("TileSet: fallback wall still works"));
+		}
+
+		// Jump Point Search must agree with A* on cost for every grid it is valid on.
+		// Random grids catch pruning bugs that hand-picked cases walk straight past.
+		{
+			FRandomStream Rng(1337);
+			int32 Solvable = 0;
+
+			for (int32 Trial = 0; Trial < 40; Trial++)
+			{
+				FPathGrid G;
+				G.Resize(12, 12);
+				for (int32 i = 0; i < G.Num(); i++)
+				{
+					if (Rng.FRand() < 0.25f)
+					{
+						G.SetTileAtIndex(i, 1);
+					}
+				}
+				G.SetTile({ 0, 0 }, 0);
+				G.SetTile({ 11, 11 }, 0);
+
+				FGridPathQuery Q;
+				Q.Start = { 0, 0 };
+				Q.Goal = { 11, 11 };
+				Q.bAllowDiagonal = true;
+
+				Q.Algorithm = EPathAlgorithm::AStar;
+				FGridSearch Star;
+				Star.Begin(G, Q);
+				Star.Solve(G, 100000);
+
+				Q.Algorithm = EPathAlgorithm::JumpPointSearch;
+				FGridSearch Jps;
+				Jps.Begin(G, Q);
+				Jps.Solve(G, 100000);
+
+				Check(!Jps.DidAlgorithmFallBack(), TEXT("JPS: ran rather than falling back"));
+				Check(Star.GetStatus() == Jps.GetStatus(), TEXT("JPS: agrees with A* on reachability"));
+
+				if (Star.GetStatus() == EPathStepResult::PathFound
+					&& Jps.GetStatus() == EPathStepResult::PathFound)
+				{
+					Solvable++;
+					CheckEq(Jps.GetPathCost(G), Star.GetPathCost(G), TEXT("JPS: same optimal cost as A*"));
+
+					// Interpolation between jump points must leave a walkable, contiguous path
+					const TArray<FIntPoint> Path = Jps.BuildPath(G);
+					bool bContiguous = Path.Num() > 0 && Path[0] == FIntPoint(0, 0)
+						&& Path.Last() == FIntPoint(11, 11);
+					for (int32 i = 1; i < Path.Num() && bContiguous; i++)
+					{
+						const FIntPoint Delta = Path[i] - Path[i - 1];
+						bContiguous = FMath::Abs(Delta.X) <= 1 && FMath::Abs(Delta.Y) <= 1
+							&& (Delta.X != 0 || Delta.Y != 0)
+							&& !G.IsBlocked(Path[i]);
+					}
+					Check(bContiguous, TEXT("JPS: path is contiguous and walkable"));
+				}
+			}
+
+			// Guard against the comparison passing because nothing was ever solvable
+			Check(Solvable > 5, TEXT("JPS: enough solvable trials to be meaningful"));
+		}
+
+		// JPS is not valid on a weighted grid, nor without diagonals, and must say so
+		{
+			FPathGrid Weighted;
+			Weighted.SetTileTable({ FPathTileInfo(1, true, FColor::White),
+									FPathTileInfo(1, false, FColor::Black),
+									FPathTileInfo(3, true, FColor::Orange) });
+			Weighted.Resize(6, 6);
+
+			FGridPathQuery Q;
+			Q.Start = { 0, 0 };
+			Q.Goal = { 5, 5 };
+			Q.Algorithm = EPathAlgorithm::JumpPointSearch;
+
+			FGridSearch OnWeighted;
+			OnWeighted.Begin(Weighted, Q);
+			Check(OnWeighted.DidAlgorithmFallBack(), TEXT("JPS: falls back on a weighted grid"));
+			Check(OnWeighted.GetAlgorithm() == EPathAlgorithm::AStar, TEXT("JPS: fell back to A*"));
+
+			FPathGrid Uniform;
+			Uniform.Resize(6, 6);
+			Q.bAllowDiagonal = false;
+			FGridSearch NoDiagonal;
+			NoDiagonal.Begin(Uniform, Q);
+			Check(NoDiagonal.DidAlgorithmFallBack(), TEXT("JPS: falls back without diagonals"));
+
+			Q.bAllowDiagonal = true;
+			FGridSearch Valid;
+			Valid.Begin(Uniform, Q);
+			Check(!Valid.DidAlgorithmFallBack(), TEXT("JPS: runs on a uniform 8-connected grid"));
 		}
 
 		// Round trip through world space

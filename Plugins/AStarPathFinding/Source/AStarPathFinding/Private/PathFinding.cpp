@@ -45,6 +45,7 @@ FGridPathQuery UPathFinding::MakeQuery() const
 	FGridPathQuery Query;
 	Query.Start = StartCoord;
 	Query.Goal = EndCoord;
+	Query.Algorithm = Algorithm;
 	Query.bAllowDiagonal = bAllowDiagonal;
 	Query.StraightCost = StraightCost;
 	Query.DiagonalCost = DiagonalCost;
@@ -75,6 +76,11 @@ EPathStepResult UPathFinding::StepOnce()
 
 		Search.Begin(Grid, MakeQuery());
 		bSearchBegun = true;
+
+		if (Search.DidAlgorithmFallBack())
+		{
+			ShowMessage(TEXT("Jump Point Search needs a uniform-cost grid with diagonals, using A*"));
+		}
 	}
 
 	const EPathStepResult Result = Search.Step(Grid);
@@ -288,6 +294,16 @@ TArray<FVector> UPathFinding::GetFinalPathWorld() const
 EPathStepResult UPathFinding::GetStatus() const
 {
 	return Search.GetStatus();
+}
+
+int32 UPathFinding::GetPathCost() const
+{
+	return Search.GetPathCost(Grid);
+}
+
+EPathAlgorithm UPathFinding::GetActiveAlgorithm() const
+{
+	return Search.GetAlgorithm();
 }
 
 FColor UPathFinding::GetStateColor(EPathCellState State) const

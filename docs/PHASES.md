@@ -11,8 +11,8 @@ plugin. Feature target is derived from the reference product described in [ADR-0
 | 2 | Extract into `Plugins/AStarPathFinding` | **DONE** | [phase-2](phase-2/README.md) |
 | 3 | Re-entrant search core (grid data vs. per-query state) | **DONE** | [phase-3](phase-3/README.md) |
 | 4 | Weighted tile types, per-query ignore/restrict filters | **DONE** | [phase-4](phase-4/README.md) |
-| 5 | Algorithm strategy: A\* + Jump Point Search | **NEXT** | |
-| 6 | Manager API: sync + async queries, segmentation, 4/8 directions | TODO | |
+| 5 | Algorithm strategy: A\* + Jump Point Search | **DONE** | [phase-5](phase-5/README.md) |
+| 6 | Manager API: sync + async queries, segmentation, 4/8 directions | **NEXT** | |
 | 7 | Actor path registration, walkable-tile updates, dynamic re-planning | TODO | |
 | 8 | Demo map, packaging, distribution docs | TODO | |
 
