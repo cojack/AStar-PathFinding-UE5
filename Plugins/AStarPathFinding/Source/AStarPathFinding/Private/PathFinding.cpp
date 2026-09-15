@@ -46,6 +46,7 @@ FGridPathQuery UPathFinding::MakeQuery() const
 	Query.Start = StartCoord;
 	Query.Goal = EndCoord;
 	Query.Algorithm = Algorithm;
+	Query.HeuristicWeight = FMath::Max(1.0f, HeuristicWeight);
 	Query.bAllowDiagonal = bAllowDiagonal;
 	Query.StraightCost = StraightCost;
 	Query.DiagonalCost = DiagonalCost;

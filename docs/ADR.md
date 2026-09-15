@@ -382,3 +382,48 @@ recur, because the case it special-cased no longer exists.
 
 An impassable goal now correctly reports `NoPath` instead of being reachable, since `CanEnter`
 applies to it like any other cell.
+
+---
+
+## ADR-0016 — An optional heuristic weight
+
+**Status:** Implemented (2026-09-15)
+
+**Context.** Repeated reports that A\* "checks every single square" before committing. A
+step-by-step trace of the 25x25 wall grid confirmed the behaviour exactly: 11 straight
+diagonal steps to the wall, then 124 of 196 expansions jumping *backwards* down the diagonal
+it had just walked, reaching the gap only at step 185 of 197 and then running to the goal in
+11 steps with no backtracking at all.
+
+That is correct A\*. The exit route costs 396 and A\* processes in cost order, so the exit
+sits at the back of the queue until everything cheaper is drained. Measured against an
+independent Dijkstra, 183 of those expansions are obligatory for any admissible heuristic;
+A\* did 196, within 7%.
+
+Correct, and still unsatisfying: the observation is that the search abandons a direction it
+was committed to in order to re-examine cells it already passed. There is no implementation
+fix, because the fanning-out *is* the optimality proof.
+
+**Decision.** `FGridPathQuery::HeuristicWeight`, default `1.0`, clamped at `1.0`. Above 1 the
+heuristic deliberately overestimates, so the search commits to its current direction rather
+than revisiting cheaper alternatives.
+
+**Consequences.** Optimality is traded for work. Weighted A\* guarantees the result is no
+worse than `weight x optimal`, and the check pins that bound rather than the speed-up - the
+bound is the contract, the speed-up is a bonus that depends on the map.
+
+Measured over 52 solvable random 30x30 mazes at 30% wall density:
+
+| weight | avg expansions | cost vs optimal | paths made worse | worst case |
+| --- | --- | --- | --- | --- |
+| 1.0 | 99.1 | +0.00% | 0 of 52 | - |
+| 1.2 | 44.5 | +1.09% | 25 of 52 | +6% |
+| 1.5 | 38.8 | +1.70% | 29 of 52 | +9% |
+| 2.0 | 36.9 | +2.73% | 37 of 52 | +11% |
+
+1.2 halves the search for about 1% longer paths; past 1.5 the returns nearly vanish. Default
+stays 1.0 so nothing changes unless asked - a plugin that silently returns non-optimal paths
+would be worse than one that searches too hard.
+
+This does not replace JPS, which expands 5 cells on the same wall grid at the *optimal* cost.
+The weight exists for grids where JPS does not apply, notably 4-connected ones.

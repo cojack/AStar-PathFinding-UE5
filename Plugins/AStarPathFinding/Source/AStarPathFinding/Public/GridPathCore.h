@@ -154,6 +154,16 @@ struct ASTARPATHFINDING_API FGridPathQuery
 	int32 StraightCost = 10;
 	int32 DiagonalCost = 14;
 
+	/**
+	 * Scales the heuristic. 1.0 is plain A*: optimal, and obliged to rule out every cell
+	 * cheaper than the answer, which is why it fans out around obstacles.
+	 *
+	 * Above 1.0 the heuristic overestimates, so the search commits to its current direction
+	 * instead of re-examining cheaper alternatives. Far fewer expansions, and paths may be
+	 * longer - bounded at this factor times optimal. 1.2 is a common trade.
+	 */
+	float HeuristicWeight = 1.0f;
+
 	/** Tiles this query may enter even when their definition says impassable. */
 	TArray<uint8> IgnoredTiles;
 

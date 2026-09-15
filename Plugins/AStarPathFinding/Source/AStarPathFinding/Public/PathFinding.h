@@ -60,6 +60,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters|Movement", meta = (UIMin = 1))
 	int32 DiagonalCost = 14;
 
+	// Scales the heuristic. 1.0 is plain A*, which is optimal but must rule out every cell
+	// cheaper than the answer. Above 1.0 it commits to its current direction instead:
+	// far fewer cells searched, paths at most this factor longer than optimal.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters|Movement", meta = (ClampMin = 1.0, UIMin = 1.0, UIMax = 3.0))
+	float HeuristicWeight = 1.0f;
+
 	// Whether the search may move diagonally. Off makes the heuristic Manhattan.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parameters|Movement")
 	bool bAllowDiagonal = true;

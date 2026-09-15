@@ -341,7 +341,10 @@ void FGridSearch::Relax(const FPathGrid& Grid, int32 FromIndex, int32 ToIndex, i
 	if (StartDist[ToIndex] < 0 || NewStartDist < StartDist[ToIndex])
 	{
 		StartDist[ToIndex] = NewStartDist;
-		Weight[ToIndex] = NewStartDist + Query.Distance(Grid.IndexToCoord(ToIndex), Query.Goal);
+		const int32 Heuristic = Query.Distance(Grid.IndexToCoord(ToIndex), Query.Goal);
+		Weight[ToIndex] = NewStartDist + (Query.HeuristicWeight > 1.0f
+			? FMath::RoundToInt(Heuristic * Query.HeuristicWeight)
+			: Heuristic);
 		Parent[ToIndex] = FromIndex;
 		Membership[ToIndex] = EPathCellState::Open;
 		OpenCells.AddUnique(ToIndex);

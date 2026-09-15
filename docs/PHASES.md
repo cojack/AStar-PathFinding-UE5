@@ -44,6 +44,12 @@ Small friction found by using the plugin rather than by testing it. Feeds phase 
 - **2026-09-15, fixed.** `bAllowDiagonal` sat under `Parameters|Costs` and was undiscoverable;
   moved to `Parameters|Movement` with the two cost properties.
 
+## Answered questions
+
+- **"Why does A* check every square?"** Traced and measured, see [ADR-0016]. Correct
+  behaviour, within 7% of the provable floor. `HeuristicWeight` added for callers who would
+  rather have the speed than the guarantee.
+
 ## Known gaps
 
 - ~~The automation tests have never executed.~~ **Closed 2026-09-15** by the commandlet in
