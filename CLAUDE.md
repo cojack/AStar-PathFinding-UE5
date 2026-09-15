@@ -36,6 +36,23 @@ module compiles. Adjust the path if the engine moves.
 
 ### Tests
 
+**Close the editor before building.** If the editor is running it holds
+`libUnrealEditor-AStarPathFinding.so` open, so UBT links to `...-0001.so`, `...-0002.so`
+instead and the base library stays stale. The build still reports `Result: Succeeded`, the
+commandlet still runs — against old code. Check first:
+
+```bash
+pgrep -x UnrealEditor && echo "close the editor first"
+```
+
+Use `pgrep -x` (process name), not `pgrep -f` — a pattern match finds the wrapper shell of the
+command running it and reports a false positive. If suffixed libraries already exist, delete
+them and rebuild:
+
+```bash
+rm -f Plugins/AStarPathFinding/Binaries/Linux/libUnrealEditor-AStarPathFinding-0*.so
+```
+
 Two checks, both headless, both fast. Run them after any change to the C++ signatures.
 
 ```bash
@@ -60,6 +77,9 @@ The automation test also runs from **Tools → Session Frontend → Automation**
 Note `Automation RunTests` does **not** complete headlessly in this environment; it stalls
 after `FindWorkersResponseMessage`, and does so for stock engine tests too, so it is the
 harness and not this project. That is why the commandlet exists.
+
+To confirm a change actually reached the binary, remember `TEXT()` literals are **wide**:
+`strings -a` cannot see them. Use `strings -a -e l`.
 
 There is no linter; the build is the check.
 

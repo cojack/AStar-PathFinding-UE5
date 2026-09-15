@@ -193,6 +193,12 @@ struct ASTARPATHFINDING_API FGridSearch
 	/** Total cost of the built path, counting every step including the last. */
 	int32 GetPathCost(const FPathGrid& Grid) const;
 
+	/** How many cells the search has expanded. The real measure of how hard it worked. */
+	int32 GetExpandedCount() const { return ClosedCells.Num(); }
+
+	/** How many cells are currently waiting in the open set. */
+	int32 GetOpenCount() const { return OpenCells.Num(); }
+
 	/** The final path, start -> goal. Empty unless the status is PathFound. */
 	TArray<FIntPoint> BuildPath(const FPathGrid& Grid) const;
 

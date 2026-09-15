@@ -392,6 +392,202 @@ namespace PathFindingChecks
 			Check(!Valid.DidAlgorithmFallBack(), TEXT("JPS: runs on a uniform 8-connected grid"));
 		}
 
+		// How much work each search does. A* expanding most of an open grid would mean the
+		// heuristic had stopped discriminating, which is silent: the path stays optimal and
+		// only the cost of finding it explodes. Nothing else here would notice.
+		{
+			const auto Run = [](int32 Size, bool bWall, EPathAlgorithm Algo, int32& OutExpanded, int32& OutCost)
+			{
+				FPathGrid G;
+				G.Resize(Size, Size);
+				if (bWall)
+				{
+					// A wall down the middle, with a gap near the bottom to squeeze through
+					for (int32 y = 0; y < Size - 3; y++)
+					{
+						G.SetBlocked({ Size / 2, y }, true);
+					}
+				}
+
+				FGridPathQuery Q;
+				Q.Start = { 0, 0 };
+				Q.Goal = { Size - 1, Size - 1 };
+				Q.Algorithm = Algo;
+
+				FGridSearch S;
+				S.Begin(G, Q);
+				S.Solve(G, 1000000);
+
+				OutExpanded = S.GetExpandedCount();
+				OutCost = S.GetPathCost(G);
+				return S.GetStatus();
+			};
+
+			int32 StarOpen = 0, StarOpenCost = 0, JpsOpen = 0, JpsOpenCost = 0;
+			int32 StarWall = 0, StarWallCost = 0, JpsWall = 0, JpsWallCost = 0;
+
+			Check(Run(25, false, EPathAlgorithm::AStar, StarOpen, StarOpenCost) == EPathStepResult::PathFound,
+				TEXT("Work: A* solves the open grid"));
+			Check(Run(25, false, EPathAlgorithm::JumpPointSearch, JpsOpen, JpsOpenCost) == EPathStepResult::PathFound,
+				TEXT("Work: JPS solves the open grid"));
+			Check(Run(25, true, EPathAlgorithm::AStar, StarWall, StarWallCost) == EPathStepResult::PathFound,
+				TEXT("Work: A* solves the walled grid"));
+			Check(Run(25, true, EPathAlgorithm::JumpPointSearch, JpsWall, JpsWallCost) == EPathStepResult::PathFound,
+				TEXT("Work: JPS solves the walled grid"));
+
+			// On a clear grid the heuristic is exact, so A* should walk almost straight there.
+			// Measured 24 of 625; 60 leaves room for tie-break changes but catches a collapse.
+			Check(StarOpen < 60, TEXT("Work: A* does not flood an open grid"));
+
+			// The whole point of JPS. Measured 1 and 5 against A*'s 24 and 196.
+			Check(JpsOpen < StarOpen, TEXT("Work: JPS expands less than A* on an open grid"));
+			Check(JpsWall < StarWall, TEXT("Work: JPS expands less than A* around a wall"));
+
+			// Cheaper only counts if the answer is still right
+			CheckEq(JpsOpenCost, StarOpenCost, TEXT("Work: JPS matches A* cost on the open grid"));
+			CheckEq(JpsWallCost, StarWallCost, TEXT("Work: JPS matches A* cost around a wall"));
+		}
+
+		// The maze from the reported screenshot: 18x10, 4-connected, A top-right, B top-left.
+		// Geometry pinned by the reported numbers themselves - a constant 170 along the top
+		// row and 190 one row below A only hold for an 18-wide grid with Manhattan costs.
+		//
+		// Everything here is checked against an independent Dijkstra rather than against A*'s
+		// own opinion, because "A* agrees with A*" would prove nothing.
+		{
+			FPathGrid Maze;
+			Maze.Resize(18, 10);
+
+			// Serpentine vertical walls, alternating which end the gap is at
+			const int32 WallColumns[] = { 3, 5, 7, 9, 11, 13 };
+			for (int32 w = 0; w < 6; w++)
+			{
+				for (int32 y = 0; y < 10; y++)
+				{
+					const bool bGap = (w % 2 == 0) ? (y == 9) : (y == 0);
+					if (!bGap)
+					{
+						Maze.SetBlocked({ WallColumns[w], y }, true);
+					}
+				}
+			}
+
+			FGridPathQuery Query;
+			Query.Start = { 17, 0 };
+			Query.Goal = { 0, 0 };
+			Query.bAllowDiagonal = false;
+
+			FGridSearch Search;
+			Check(Search.Begin(Maze, Query), TEXT("Maze: began"));
+			Check(Search.Solve(Maze, 1000000) == EPathStepResult::PathFound, TEXT("Maze: path found"));
+
+			const int32 FinalCost = Search.GetPathCost(Maze);
+
+			// --- Independent oracle: uniform-cost search, no heuristic, no shared code ---
+			TArray<int32> Best;
+			Best.Init(MAX_int32, Maze.Num());
+			const int32 StartIdx = Maze.CoordToIndex(Query.Start);
+			const int32 GoalIdx = Maze.CoordToIndex(Query.Goal);
+			Best[StartIdx] = 0;
+			bool bChanged = true;
+			while (bChanged)
+			{
+				bChanged = false;
+				for (int32 i = 0; i < Maze.Num(); i++)
+				{
+					if (Best[i] == MAX_int32)
+					{
+						continue;
+					}
+					const FIntPoint C = Maze.IndexToCoord(i);
+					const FIntPoint Steps[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+					for (const FIntPoint& S : Steps)
+					{
+						const int32 N = Maze.CoordToIndex({ C.X + S.X, C.Y + S.Y });
+						if (N == INDEX_NONE || Maze.IsBlockedIndex(N))
+						{
+							continue;
+						}
+						if (Best[i] + 10 < Best[N])
+						{
+							Best[N] = Best[i] + 10;
+							bChanged = true;
+						}
+					}
+				}
+			}
+
+			CheckEq(FinalCost, Best[GoalIdx], TEXT("Maze: A* cost matches an independent Dijkstra"));
+
+			// --- Every number drawn on screen must literally be g + h ---
+			bool bWeightsConsistent = true;
+			int32 Closed = 0;
+			int32 StillOpen = 0;
+			bool bClosedUnderCost = true;
+			bool bOpenOverCost = true;
+
+			const int32 StartIdxForWeights = Maze.CoordToIndex(Query.Start);
+
+			// The start is never relaxed - nothing reaches it - so it has g = 0 and no f at
+			// all. That is why the editor draws "A" there and not a number.
+			Check(Search.GetStartDist(StartIdxForWeights) == 0, TEXT("Maze: start has g = 0"));
+			Check(Search.GetWeight(StartIdxForWeights) < 0, TEXT("Maze: start has no f value"));
+
+			for (int32 i = 0; i < Maze.Num(); i++)
+			{
+				if (i == StartIdxForWeights)
+				{
+					continue;
+				}
+
+				const EPathCellState State = Search.GetMembership(i);
+				if (State != EPathCellState::Open && State != EPathCellState::Closed
+					&& State != EPathCellState::Path)
+				{
+					continue;
+				}
+
+				const FIntPoint C = Maze.IndexToCoord(i);
+				const int32 ExpectedH = (FMath::Abs(C.X - Query.Goal.X) + FMath::Abs(C.Y - Query.Goal.Y)) * 10;
+				if (Search.GetWeight(i) != Search.GetStartDist(i) + ExpectedH)
+				{
+					bWeightsConsistent = false;
+				}
+
+				// A* terminates with every expanded cell at or below the final cost, and
+				// everything still queued at or above it. That is the whole guarantee.
+				if (State == EPathCellState::Closed || State == EPathCellState::Path)
+				{
+					Closed++;
+					if (Search.GetWeight(i) > FinalCost)
+					{
+						bClosedUnderCost = false;
+					}
+				}
+				else
+				{
+					StillOpen++;
+					if (Search.GetWeight(i) < FinalCost)
+					{
+						bOpenOverCost = false;
+					}
+				}
+			}
+
+			Check(bWeightsConsistent, TEXT("Maze: every displayed weight equals g + Manhattan h"));
+			Check(bClosedUnderCost, TEXT("Maze: no expanded cell costs more than the final path"));
+			Check(bOpenOverCost, TEXT("Maze: nothing left queued is cheaper than the final path"));
+			Check(Closed > 0 && StillOpen >= 0, TEXT("Maze: search actually ran"));
+
+			// The specific numbers from the screenshot, on an empty grid of the same size
+			FPathGrid Plain;
+			Plain.Resize(18, 10);
+			FGridSearch PlainSearch;
+			PlainSearch.Begin(Plain, Query);
+			PlainSearch.Solve(Plain, 1000000);
+			CheckEq(PlainSearch.GetPathCost(Plain), 170, TEXT("Maze: straight run along the top row costs 170"));
+		}
+
 		// Round trip through world space
 		{
 			UPathFinding* Grid = MakeGrid(5, 5);

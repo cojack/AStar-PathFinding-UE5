@@ -69,6 +69,39 @@ It also deleted code rather than adding it. `GoalParent`, the empty-closed-set s
   behaviour. That is the regression net working: the goal-expansion change was supposed to
   alter that behaviour, and the check said so.
 
+## Verified against an independent oracle
+
+A reported case of "it checks every single square" prompted a direct check rather than an
+explanation. The maze from that report is reconstructed in `PathFindingChecks.h`: 18x10,
+4-connected, start top-right, goal top-left. The geometry was derived from the reported
+numbers themselves - a constant 170 along the top row and 190 one row below the start only
+hold for an 18-wide grid under Manhattan costs.
+
+What it asserts:
+
+- **Cost matches an independent Dijkstra** written inline in the check, sharing no code with
+  `FGridSearch`. "A* agrees with A*" would prove nothing.
+- **Every displayed weight is exactly `g + Manhattan h`**, so the numbers drawn on screen are
+  accounted for cell by cell.
+- **Every expanded cell has `f <= FinalCost`**, and **everything still queued has
+  `f >= FinalCost`**. That pair is the whole A* guarantee, and it is why the search looks
+  wasteful: it must rule out every cell cheaper than the answer before it can claim the answer
+  is optimal. On that maze, 107 of 180 cells.
+
+The behaviour was confirmed correct. One real bug surfaced - in the check, not the algorithm:
+the invariant included the **start cell**, which is never relaxed and so has `g = 0` and no
+`f` at all. That is why the editor draws "A" there rather than a number. The check now asserts
+that explicitly instead of tripping over it.
+
+Measured work, same grid, same optimal cost:
+
+| | expanded | open | cost |
+| --- | --- | --- | --- |
+| A* open 25x25 | 24 | 94 | 336 |
+| JPS open 25x25 | 1 | 0 | 336 |
+| A* around a wall | 196 | 45 | 396 |
+| JPS around a wall | 5 | 0 | 396 |
+
 ## Not done
 
 PIE with JPS selected. The algorithm is verified against A\* far more thoroughly than eyes
