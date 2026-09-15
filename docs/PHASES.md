@@ -69,9 +69,35 @@ cells; it is the *cost per expansion* that grows, from 0.26 to 2.8 microseconds,
 JPS expands 5 cells at every size. Its 4 ms at 500x500 is almost entirely allocating the
 per-query buffers, not searching.
 
+### A* against JPS on realistic maps
+
+The single-wall grid above flatters JPS badly. With scattered obstacles, same map, both optimal:
+
+| Grid | Obstacles | A* | JPS | speedup |
+| --- | --- | --- | --- | --- |
+| 100x100 | 0% | 0.16 ms | 0.21 ms | 0.8x, slower |
+| 100x100 | 25% | 0.63 ms | 0.36 ms | 1.8x |
+| 200x200 | 10% | 4.56 ms | 1.26 ms | 3.6x |
+| 200x200 | 25% | 5.57 ms | 2.77 ms | 2.0x |
+| 500x500 | 10% | 41.3 ms | 11.0 ms | 3.8x |
+| 500x500 | 25% | 74.8 ms | 32.7 ms | 2.3x |
+
+**JPS is worth 2-4x on real maps, not the 40x the single-wall case suggests, and it is slower
+than A* on an empty grid.** Its cost is scan length in `Jump`, so obstacles hurt it: 500x500
+went 3.97 ms at 0% obstacles to 35 ms at 30%.
+
+Everything here is **synchronous**, on the calling thread. Budget against a 16 ms frame:
+
+| Map | best per query | queries per frame |
+| --- | --- | --- |
+| 100x100, 25% obstacles | 0.36 ms | ~40 |
+| 200x200, 25% obstacles | 2.8 ms | ~5 |
+| 500x500, 25% obstacles | 33 ms | under one |
+
 Consequences for the roadmap:
 
-- Async queries (phase 6) stop being optional above roughly 150x150 on the game thread.
+- Async queries (phase 6) stop being optional above roughly 150x150 on the game thread. This
+  is the highest-value remaining work: no algorithm choice rescues 500x500 synchronously.
 - The binary heap deferred in `SelectLightest` is now justified by measurement rather than
   suspicion. Constant-ish cost per expansion would put 500x500 near 30 ms instead of 261 ms.
 

@@ -93,6 +93,34 @@ int32 UPathFindingTestCommandlet::Main(const FString& Params)
 		MazeQuery.bAllowDiagonal = false;
 		Shot(TEXT("reported-maze"), Maze, MazeQuery);
 
+		// Scattered obstacles: a realistic map, unlike the single-wall case where JPS looks
+		// far better than it is. Same map, both algorithms.
+		const auto Cluttered = []()
+		{
+			FPathGrid G;
+			G.Resize(50, 30);
+			FRandomStream Rng(11);
+			for (int32 i = 0; i < G.Num(); i++)
+			{
+				if (Rng.FRand() < 0.20f) { G.SetTileAtIndex(i, 1); }
+			}
+			G.SetTile({ 0, 0 }, 0);
+			G.SetTile({ 49, 29 }, 0);
+			return G;
+		};
+
+		FGridPathQuery Clutter;
+		Clutter.Start = { 0, 0 };
+		Clutter.Goal = { 49, 29 };
+
+		FPathGrid Clutter1 = Cluttered();
+		Clutter.Algorithm = EPathAlgorithm::AStar;
+		Shot(TEXT("cluttered-astar"), Clutter1, Clutter);
+
+		FPathGrid Clutter2 = Cluttered();
+		Clutter.Algorithm = EPathAlgorithm::JumpPointSearch;
+		Shot(TEXT("cluttered-jps"), Clutter2, Clutter);
+
 		// A serpentine forcing a long detour: the reported "why does it check the whole
 		// empty space" case. Direct distance 234, real route 390, so every cell whose
 		// estimate is under 390 has to be ruled out first.
