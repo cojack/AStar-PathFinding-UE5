@@ -3,7 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPathFindingTest, "TP1.PathFinding",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPathFindingTest, "AStarPathFinding.Core",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FPathFindingTest::RunTest(const FString& Parameters)

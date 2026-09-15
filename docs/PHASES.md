@@ -14,7 +14,7 @@ plugin. Feature target is derived from the reference product described in [ADR-0
 | 5 | Algorithm strategy: A\* + Jump Point Search | **DONE** | [phase-5](phase-5/README.md) |
 | 6 | Manager API: sync + async queries, segmentation, 4/8 directions | **DONE** | [phase-6](phase-6/README.md) |
 | 7 | Actor path registration, walkable-tile updates, dynamic re-planning | **DONE** | [phase-7](phase-7/README.md) |
-| 8 | Demo map, packaging, distribution docs | **NEXT** | |
+| 8 | Demo map, packaging, distribution docs | **PARTIAL** | [phase-8](phase-8/README.md) |
 
 Phase 3 is done, which unblocks 5, 6 and 7 — none of them were safe to build on a search
 that wrote into the grid it was reading ([ADR-0012]).

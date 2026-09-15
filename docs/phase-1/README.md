@@ -57,7 +57,7 @@ breaking the Blueprints that already bind to it.
   `FindWorkersResponseMessage` at 300s and at 900s. Ran a stock engine test
   (`WorldMetrics.TestZeroState`) the same way as a control — it stalls identically, so the
   cause is the harness in this environment, not this project. The test is registered and
-  discoverable (`'TP1.PathFinding'` is listed among 6121 tests). Left unticked deliberately:
+  discoverable (`'AStarPathFinding.Core'` is listed among 6121 tests). Left unticked deliberately:
   written and compiled is not the same as passing.
 
 ## Deliberate simplifications

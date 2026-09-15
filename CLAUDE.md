@@ -70,7 +70,7 @@ The plugin move passed with 0 errors while silently introducing a dangling packa
 that only showed up as a new warning line.
 
 The assertions live in `PathFindingChecks::Run()` (`Private/PathFindingChecks.h`), returning
-one string per failure. The commandlet and the automation test `TP1.PathFinding` are both thin
+one string per failure. The commandlet and the automation test `AStarPathFinding.Core` are both thin
 wrappers over it — add new checks there, not in either wrapper.
 
 The automation test also runs from **Tools → Session Frontend → Automation** (filter `TP1`).

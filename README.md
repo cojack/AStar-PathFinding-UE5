@@ -1,71 +1,66 @@
-# A* Pathfinding Project in Unreal Engine 5
+# A\* Pathfinding in Unreal Engine 5
 
-## Project Description
-This project implements the A* pathfinding algorithm in Unreal Engine 5 via an actor component (`UPathFinding`). The algorithm calculates the shortest path between two points in a grid while avoiding obstacles, using weighted cells and distance heuristics.
+Started as a single-file A\* demo. Now a self-contained grid pathfinding plugin with a demo
+project wrapped around it.
 
-## Key Features
-- **Grid of Cells**: Configurable in terms of size and dimensions.
-- **Optimal Path Detection**: Uses distance weighting to find the shortest path.
-- **Path Visualization**: Cells change color based on their status (start, destination, wall, visited cell, etc.).
-- **Obstacle Support**: Ability to define wall cells that block the path.
-- **Real-Time Operation**: Can be activated with step-by-step iterations to observe the progressive path calculation.
+**The plugin lives in [`Plugins/AStarPathFinding/`](Plugins/AStarPathFinding/README.md)** —
+that README is the one to read for installation and API. This page is about the repository.
 
-## Quick Start
-1. Generate project files, compile the code, and press play in the editor.
-2. **Left Click**: Toggle wall cells.
-3. **Right Click**: Toggle the start and end cell positions.
-4. Click on "NEXT STEP" to observe the progressive path calculation.
-5. Click on "RESET CELLS" to clear the grid and reset the algorithm.
+## What is here
 
-## Project Structure
-- **PathFinding.h**: Declaration of the `UPathFinding` class and its members, along with public and private functions required for the A* algorithm.
-- **PathFinding.cpp**: Implementation of functions, including cell initialization, distance calculations, cell selection, and cell management methods such as `ToggleWall`, `ToggleBeginEnd`, and `NextIteration`.
+| | |
+| --- | --- |
+| `Plugins/AStarPathFinding/` | the plugin. Pure C++, depends only on Core, CoreUObject, Engine |
+| `Content/` | the demo: a grid you can draw walls on and step a search through |
+| `Source/TP1/` | the game module, which now declares nothing |
+| `docs/` | [phases](docs/PHASES.md) and [architecture decisions](docs/ADR.md) |
 
-## Usage Guide
+## Features
 
-### Initialization
-- **Grid Dimensions**: In the Unreal Editor, set `HorizontalCells`, `VerticalCells`, and `CellSize` properties to configure the grid.
-- **Setting Start and End Points**: Use `ToggleBeginEnd` by clicking on two points to define the start and end cells.
-- **Adding Walls**: Use the `ToggleWall` function to add obstacles to specific cells in the grid.
+- **A\*** and **Jump Point Search**, both optimal, selectable per query
+- **Weighted tile types** from a data asset, with per-query ignore and restrict filters
+- **Synchronous and asynchronous** queries; async copies the grid and runs on the thread pool
+- **Actor path tracking** that reports when terrain changes cut a route, and re-plans on request
+- **Heuristic weight** to trade optimality for speed where that is the better deal
+- **Step-by-step visualiser** drawing the frontier, weights and parent links
 
-### Running the Algorithm
-1. **Start Iteration**: Call `NextIteration` to compute the path step by step.
-2. **Resetting**: If needed, use `ResetCells` to clear the grid and reset the algorithm.
+## Running the demo
 
-### Visualization
-- Cells take on different colors to indicate their status:
-  - **White**: Unvisited cell.
-  - **Black**: Wall.
-  - **Green**: Weighted cell.
-  - **Red**: Cell being processed.
-  - **Blue**: Final path.
-- Arrows and text labels help visualize relationships between cells and their weights.
+Generate project files, build, open `Content/Maps/MainMap` and press Play.
 
-## Configuration and Installation
-1. Add `PathFinding.cpp` and `PathFinding.h` files to your Unreal Engine 5 project.
-2. Ensure that the `UPathFinding` component is attached to the desired actor.
-3. Compile the project and adjust the parameters in the Unreal Editor.
+- **Left click** — toggle a wall
+- **Right click** — place the start, then the goal
+- **NEXT STEP** — advance the search. With `Steps Per Iteration` at 9999 it solves in one click
+- **RESET CELLS** — clear everything
 
-## Potential Improvements
-- **Optimization with Priority Queues**: For more efficient calculation of weighted cells.
-- **Customizable Heuristic**: Adjust the distance heuristic to adapt the algorithm to different types of terrain.
-- **User Interface**: Add an interface to simplify interaction with the grid and pathfinding settings.
+Properties are on the `PathFinding` component of `BP_Player`, in the **Components** panel
+(not the event graph): algorithm, movement costs, diagonals, heuristic weight, tile set,
+debug draw toggles and colours.
 
-## License
-This project is intended for learning purposes and is free for personal and educational use.
+## Tests
 
-## Visualization
+```bash
+UnrealEditor-Cmd TP1.uproject -run=PathFindingTest -unattended -nopause -nullrhi
+```
 
-The following images show how the A* pathfinding grid updates:
+Exit code is the number of failures. It also writes PNGs of each scenario to
+`Saved/PathFindingTests/` and prints a scaling benchmark.
+
+Checks cover A\* against an independent Dijkstra, JPS against A\* over random mazes, expansion
+counts against the theoretical floor, concurrent queries over one shared grid on real threads,
+and the actor registry against a real world with a real spawned actor.
+
+## Visualisation
 
 ![Initialize cells](ReadMeContent/PlaceCells.gif)
 
 ![Step by step iterations](ReadMeContent/Iterations.gif)
 
 ![](ReadMeContent/Step1.png)
-
 ![](ReadMeContent/Step2.png)
-
 ![](ReadMeContent/Step3.png)
-
 ![](ReadMeContent/Step4.png)
+
+## License
+
+Intended for learning. Free for personal and educational use.

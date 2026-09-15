@@ -165,7 +165,7 @@ frozen Blueprint bindings ([ADR-0002]) breaking silently.
 
 **Decision.** Two independent checks:
 
-1. `TP1.PathFinding` automation test (`WITH_DEV_AUTOMATION_TESTS`) for algorithm behaviour.
+1. `AStarPathFinding.Core` automation test (`WITH_DEV_AUTOMATION_TESTS`) for algorithm behaviour.
 2. `-run=CompileAllBlueprints` for the asset bindings.
 
 **Consequences.** Check 2 works headlessly, takes ~66s, and passes.
@@ -173,7 +173,7 @@ frozen Blueprint bindings ([ADR-0002]) breaking silently.
 Check 1 **cannot be run headlessly in this environment** — `Automation RunTests` stalls after
 `FindWorkersResponseMessage`, and does so for stock engine tests too
 (`WorldMetrics.TestZeroState`), so the cause is the harness, not this project. The test is
-registered and discoverable (`'TP1.PathFinding'` appears among 6121 listed tests) but only
+registered and discoverable (`'AStarPathFinding.Core'` appears among 6121 listed tests) but only
 runs from **Session Frontend → Automation**.
 
 **Superseded in part by ADR-0014**, which adds a commandlet entry point so the same checks do
@@ -193,13 +193,13 @@ target is a distributable plugin.
 depending only on `Core`, `CoreUObject`, `Engine`). `TP1_API` → `ASTARPATHFINDING_API`.
 `TP1` stays as the primary game module.
 
-Moving a class between modules changes its path from `/Script/TP1.PathFinding` to
+Moving a class between modules changes its path from `/Script/AStarPathFinding.Core` to
 `/Script/AStarPathFinding.PathFinding`, which would strip the component from `BP_Player` and
 `MainMap`. Handled with a core redirect in `Config/DefaultEngine.ini`:
 
 ```ini
 [CoreRedirects]
-+ClassRedirects=(OldName="/Script/TP1.PathFinding",NewName="/Script/AStarPathFinding.PathFinding")
++ClassRedirects=(OldName="/Script/AStarPathFinding.Core",NewName="/Script/AStarPathFinding.PathFinding")
 ```
 
 The plugin ships as pure C++; the demo content stays in the project.
