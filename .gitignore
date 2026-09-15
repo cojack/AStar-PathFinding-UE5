@@ -1,0 +1,11 @@
+# Unreal build artifacts
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.sln
+*.xcodeproj/
+.vs/
+.vscode/
+.idea/
