@@ -116,6 +116,36 @@ single square", drawn. `jps-wall.png` is the same grid and the same cost with fi
 way to paint non-wall tiles: the path runs along the edge of the mud band and cuts down past
 its end rather than crossing it.
 
+## Why A* looks wasteful, measured
+
+A second report, that searching the region above the wall was obviously pointless when the
+route runs along the bottom. Measured rather than argued, on the 25x25 wall grid:
+
+| | expansions |
+| --- | --- |
+| Reachable cells | 603 |
+| With no heuristic (Dijkstra) | 441 |
+| Floor: cells any admissible A* is obliged to expand | 183 |
+| What this A* does | 196 |
+| JPS, same grid, same cost | 5 |
+
+A* is within 7% of the floor; the excess is cells with `f` exactly equal to the final cost,
+which tie-breaking may touch either way.
+
+The heuristic is a straight-line estimate and cannot see the wall. A cell at (11,10) has
+`g = 150` and `h = 192`, total 342 against a final cost of 396 - it looks promising and only
+walking there disproves it. Every one of those 183 cells must be ruled out before 396 can be
+claimed optimal. Skipping them is not a smarter A*, it is a wrong one.
+
+This is now a permanent check: A* must expand at least the floor and no more than floor + 40,
+and the heuristic must at least halve the work versus none. If `h` ever stops discriminating,
+paths stay correct and only the cost of finding them explodes - a silent failure this is the
+only check that would catch.
+
+The honest conclusion for a product: this question will be asked by users too. The answer is
+JPS, which is why it exists. A weighted heuristic remains available as an option that trades
+the optimality guarantee for far fewer expansions on 4-connected grids.
+
 ## Not done
 
 PIE with JPS selected. The algorithm is verified against A\* far more thoroughly than eyes

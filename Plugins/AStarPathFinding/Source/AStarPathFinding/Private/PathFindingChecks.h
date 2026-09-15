@@ -588,6 +588,104 @@ namespace PathFindingChecks
 			CheckEq(PlainSearch.GetPathCost(Plain), 170, TEXT("Maze: straight run along the top row costs 170"));
 		}
 
+		// A* must expand every cell whose true cost g* + h is below the final cost - that is
+		// what buys the optimality guarantee. Measuring against that floor is the sharpest
+		// test of the heuristic there is: if h stops discriminating, paths stay correct and
+		// only the work explodes, and the floor moves while A* does not.
+		{
+			const int32 Size = 25;
+			FPathGrid G;
+			G.Resize(Size, Size);
+			for (int32 y = 0; y < Size - 3; y++)
+			{
+				G.SetBlocked({ Size / 2, y }, true);
+			}
+
+			FGridPathQuery Q;
+			Q.Start = { 0, 0 };
+			Q.Goal = { Size - 1, Size - 1 };
+
+			FGridSearch S;
+			S.Begin(G, Q);
+			Check(S.Solve(G, 1000000) == EPathStepResult::PathFound, TEXT("Floor: path found"));
+			const int32 FinalCost = S.GetPathCost(G);
+
+			// True shortest distance to every cell, independent of the search under test
+			TArray<int32> TrueG;
+			TrueG.Init(MAX_int32, G.Num());
+			TrueG[G.CoordToIndex(Q.Start)] = 0;
+			bool bChanged = true;
+			while (bChanged)
+			{
+				bChanged = false;
+				for (int32 i = 0; i < G.Num(); i++)
+				{
+					if (TrueG[i] == MAX_int32)
+					{
+						continue;
+					}
+					const FIntPoint C = G.IndexToCoord(i);
+					for (int32 dy = -1; dy <= 1; dy++)
+					{
+						for (int32 dx = -1; dx <= 1; dx++)
+						{
+							if (dx == 0 && dy == 0)
+							{
+								continue;
+							}
+							const int32 N = G.CoordToIndex({ C.X + dx, C.Y + dy });
+							if (N == INDEX_NONE || G.IsBlockedIndex(N))
+							{
+								continue;
+							}
+							const int32 Step = (dx != 0 && dy != 0) ? 14 : 10;
+							if (TrueG[i] + Step < TrueG[N])
+							{
+								TrueG[N] = TrueG[i] + Step;
+								bChanged = true;
+							}
+						}
+					}
+				}
+			}
+
+			int32 Floor = 0;          // cells any admissible A* is obliged to expand
+			int32 WithoutHeuristic = 0;   // what the same search would need with h = 0
+			int32 Unnecessary = 0;
+			for (int32 i = 0; i < G.Num(); i++)
+			{
+				if (G.IsBlockedIndex(i) || TrueG[i] == MAX_int32)
+				{
+					continue;
+				}
+
+				const bool bMust = TrueG[i] + Q.Distance(G.IndexToCoord(i), Q.Goal) < FinalCost;
+				const EPathCellState St = S.GetMembership(i);
+				const bool bExpanded = (St == EPathCellState::Closed || St == EPathCellState::Path);
+
+				if (bMust)
+				{
+					Floor++;
+				}
+				if (TrueG[i] < FinalCost)
+				{
+					WithoutHeuristic++;
+				}
+				if (bExpanded && !bMust)
+				{
+					Unnecessary++;
+				}
+			}
+
+			// Measured: floor 183, A* 196, no-heuristic 441. Slack covers tie-break changes.
+			Check(S.GetExpandedCount() >= Floor, TEXT("Floor: A* expanded at least the obliged set"));
+			Check(S.GetExpandedCount() <= Floor + 40, TEXT("Floor: A* stays close to the obliged set"));
+			Check(Unnecessary <= 40, TEXT("Floor: few expansions beyond the obliged set"));
+
+			// The heuristic has to be earning its keep, not just present
+			Check(Floor * 2 < WithoutHeuristic, TEXT("Floor: heuristic halves the work versus none"));
+		}
+
 		// Round trip through world space
 		{
 			UPathFinding* Grid = MakeGrid(5, 5);
