@@ -50,6 +50,31 @@ Small friction found by using the plugin rather than by testing it. Feeds phase 
   behaviour, within 7% of the provable floor. `HeuristicWeight` added for callers who would
   rather have the speed than the guarantee.
 
+## Scaling, measured 2026-09-16
+
+One query, wall grid, corner to corner. `-run=PathFindingTest` prints these every run.
+
+| Grid | Cells | A* expanded | A* | JPS |
+| --- | --- | --- | --- | --- |
+| 25x25 | 625 | 196 | 0.05 ms | 0.02 ms |
+| 100x100 | 10,000 | 3,619 | 2.3 ms | 0.18 ms |
+| 200x200 | 40,000 | 14,744 | 17.8 ms | 0.64 ms |
+| 400x400 | 160,000 | 59,494 | 135 ms | 2.5 ms |
+| 500x500 | 250,000 | 93,119 | 261 ms | 4.1 ms |
+
+A* scales as roughly `cells^1.4`. Expansions themselves are linear, always about 37% of
+cells; it is the *cost per expansion* that grows, from 0.26 to 2.8 microseconds, because
+`SelectLightest` scans the whole open set and the open set grows with the map.
+
+JPS expands 5 cells at every size. Its 4 ms at 500x500 is almost entirely allocating the
+per-query buffers, not searching.
+
+Consequences for the roadmap:
+
+- Async queries (phase 6) stop being optional above roughly 150x150 on the game thread.
+- The binary heap deferred in `SelectLightest` is now justified by measurement rather than
+  suspicion. Constant-ish cost per expansion would put 500x500 near 30 ms instead of 261 ms.
+
 ## Known gaps
 
 - ~~The automation tests have never executed.~~ **Closed 2026-09-15** by the commandlet in

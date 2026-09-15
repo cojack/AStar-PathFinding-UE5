@@ -138,6 +138,47 @@ int32 UPathFindingTestCommandlet::Main(const FString& Params)
 			*PathFindingImageDump::OutputDir());
 	}
 
+	// Scaling benchmark. Logged, never asserted - wall-clock assertions are flaky on
+	// shared machines, but a regression is obvious the moment you read the numbers.
+	{
+		const auto Bench = [](int32 Size, bool bWall, EPathAlgorithm Algo, const TCHAR* Label)
+		{
+			FPathGrid G;
+			G.Resize(Size, Size);
+			if (bWall)
+			{
+				for (int32 y = 0; y < Size - 3; y++)
+				{
+					G.SetBlocked({ Size / 2, y }, true);
+				}
+			}
+
+			FGridPathQuery Q;
+			Q.Start = { 0, 0 };
+			Q.Goal = { Size - 1, Size - 1 };
+			Q.Algorithm = Algo;
+
+			const double T0 = FPlatformTime::Seconds();
+			FGridSearch S;
+			S.Begin(G, Q);
+			S.Solve(G, 100000000);
+			const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+
+			UE_LOG(LogPathFindingTest, Display,
+				TEXT("BENCH %-8s %4dx%-4d cells=%7d  expanded=%6d  %9.2f ms  status=%d"),
+				Label, Size, Size, G.Num(), S.GetExpandedCount(), Ms, (int32)S.GetStatus());
+		};
+
+		for (int32 Size : { 50, 100, 200, 400 })
+		{
+			Bench(Size, true, EPathAlgorithm::AStar, TEXT("A*wall"));
+		}
+		for (int32 Size : { 50, 100, 200, 400 })
+		{
+			Bench(Size, true, EPathAlgorithm::JumpPointSearch, TEXT("JPSwall"));
+		}
+	}
+
 	return Failures.Num();
 #else
 	UE_LOG(LogPathFindingTest, Error, TEXT("Built without WITH_DEV_AUTOMATION_TESTS, nothing to run."));
