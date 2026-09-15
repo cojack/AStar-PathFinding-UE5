@@ -12,8 +12,8 @@ plugin. Feature target is derived from the reference product described in [ADR-0
 | 3 | Re-entrant search core (grid data vs. per-query state) | **DONE** | [phase-3](phase-3/README.md) |
 | 4 | Weighted tile types, per-query ignore/restrict filters | **DONE** | [phase-4](phase-4/README.md) |
 | 5 | Algorithm strategy: A\* + Jump Point Search | **DONE** | [phase-5](phase-5/README.md) |
-| 6 | Manager API: sync + async queries, segmentation, 4/8 directions | **NEXT** | |
-| 7 | Actor path registration, walkable-tile updates, dynamic re-planning | TODO | |
+| 6 | Manager API: sync + async queries, segmentation, 4/8 directions | **DONE** | [phase-6](phase-6/README.md) |
+| 7 | Actor path registration, walkable-tile updates, dynamic re-planning | **NEXT** | |
 | 8 | Demo map, packaging, distribution docs | TODO | |
 
 Phase 3 is done, which unblocks 5, 6 and 7 — none of them were safe to build on a search
@@ -27,7 +27,9 @@ settle before the phase that depends on it starts.
 1. ~~**Tile type model.**~~ **Decided 2026-09-15: data-driven `UDataAsset`** ([ADR-0013]).
    The plugin ships no tile vocabulary; the demo supplies Basic/Mud/Door/Concrete/Hole as
    sample data.
-2. **What does `Segment Path` mean?** (still open) The reference UI exposes it as an integer (default 1)
+2. **What does `Segment Path` mean?** Implemented as "keep every Nth waypoint, endpoints
+   always", documented as an assumption in [phase-6](phase-6/README.md). Never observed in the
+   reference product. `ThinPath` is the only thing to change if it is wrong. The reference UI exposes it as an integer (default 1)
    on every query. Most likely the path is returned in chunks of N tiles, or simplified to
    every Nth waypoint. Behaviour was inferred from screenshots, never observed. Blocks
    phase 6.

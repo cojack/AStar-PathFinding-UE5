@@ -628,3 +628,48 @@ int32 FGridSearch::GetParent(int32 Index) const
 {
 	return Parent.IsValidIndex(Index) ? Parent[Index] : INDEX_NONE;
 }
+
+//////////////////////  Query entry points
+
+TArray<FIntPoint> ThinPath(const TArray<FIntPoint>& Path, int32 KeepEvery)
+{
+	if (KeepEvery <= 1 || Path.Num() <= 2)
+	{
+		return Path;
+	}
+
+	TArray<FIntPoint> Thinned;
+	Thinned.Add(Path[0]);
+
+	for (int32 i = KeepEvery; i < Path.Num() - 1; i += KeepEvery)
+	{
+		Thinned.Add(Path[i]);
+	}
+
+	Thinned.Add(Path.Last());
+	return Thinned;
+}
+
+FGridPathResult RunGridPathQuery(const FPathGrid& Grid, const FGridPathQuery& Query,
+	int32 KeepEvery, int32 MaxIterations)
+{
+	FGridPathResult Result;
+
+	FGridSearch Search;
+	if (!Search.Begin(Grid, Query))
+	{
+		Result.Status = EPathStepResult::NotStarted;
+		return Result;
+	}
+
+	Result.Status = Search.Solve(Grid, MaxIterations);
+	Result.Expanded = Search.GetExpandedCount();
+
+	if (Result.Status == EPathStepResult::PathFound)
+	{
+		Result.Cost = Search.GetPathCost(Grid);
+		Result.Path = ThinPath(Search.BuildPath(Grid), KeepEvery);
+	}
+
+	return Result;
+}

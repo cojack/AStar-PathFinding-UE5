@@ -70,6 +70,28 @@ struct FPathCell
 	int32 ParentIndex = INDEX_NONE;
 };
 
+/** What a finished query produces. */
+USTRUCT(BlueprintType)
+struct FGridPathResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "PathFinding")
+	EPathStepResult Status = EPathStepResult::NotStarted;
+
+	/** Start -> goal. Empty unless Status is PathFound. Thinned if the query asked for it. */
+	UPROPERTY(BlueprintReadOnly, Category = "PathFinding")
+	TArray<FIntPoint> Path;
+
+	/** Total cost of the full path, before any thinning. */
+	UPROPERTY(BlueprintReadOnly, Category = "PathFinding")
+	int32 Cost = 0;
+
+	/** Cells expanded. The honest measure of how hard the query worked. */
+	UPROPERTY(BlueprintReadOnly, Category = "PathFinding")
+	int32 Expanded = 0;
+};
+
 /**
  * A tile type as the search sees it: a plain snapshot of one FPathTileDef, with no UObject
  * behind it, so a grid can be read from a worker thread without touching the asset.
@@ -84,6 +106,12 @@ struct FPathTileInfo
 	FPathTileInfo(int32 InCostMultiplier, bool bInPassable, FColor InColor)
 		: CostMultiplier(InCostMultiplier), bPassable(bInPassable), Color(InColor) {}
 };
+
+/**
+ * Keeps the first and last point and every Nth in between. 1 or less returns the path
+ * unchanged. For callers steering an actor that does not need every cell.
+ */
+ASTARPATHFINDING_API TArray<FIntPoint> ThinPath(const TArray<FIntPoint>& Path, int32 KeepEvery);
 
 /**
  * Durable grid data: what is true about the world regardless of who is pathing through it.
@@ -262,3 +290,11 @@ private:
 	void PrunedDirections(const FPathGrid& Grid, FIntPoint Coord, int32 dx, int32 dy,
 		TArray<FIntPoint>& OutDirections) const;
 };
+
+/**
+ * Runs one query start to finish against a grid it only reads. Free of UObjects and of any
+ * shared state, so it is safe to call from a worker thread - which is the whole reason the
+ * search was made re-entrant in the first place.
+ */
+ASTARPATHFINDING_API FGridPathResult RunGridPathQuery(const FPathGrid& Grid,
+	const FGridPathQuery& Query, int32 KeepEvery = 1, int32 MaxIterations = 10000000);

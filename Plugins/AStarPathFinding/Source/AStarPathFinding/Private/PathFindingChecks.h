@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "PathFinding.h"
+#include "Async/Async.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -753,6 +754,103 @@ namespace PathFindingChecks
 			Default.Start = { 0, 0 };
 			Default.Goal = { 24, 24 };
 			CheckEq((int32)(Default.HeuristicWeight * 100), 100, TEXT("Weight: defaults to 1.0"));
+		}
+
+		// Path thinning, the SegmentPath knob
+		{
+			TArray<FIntPoint> Line;
+			for (int32 i = 0; i < 10; i++)
+			{
+				Line.Add({ i, 0 });
+			}
+
+			CheckEq(ThinPath(Line, 1).Num(), 10, TEXT("Thin: 1 keeps every point"));
+			CheckEq(ThinPath(Line, 0).Num(), 10, TEXT("Thin: 0 is treated as 1"));
+
+			const TArray<FIntPoint> Third = ThinPath(Line, 3);
+			Check(Third.Num() < Line.Num(), TEXT("Thin: 3 drops points"));
+			Check(Third[0] == Line[0], TEXT("Thin: start survives"));
+			Check(Third.Last() == Line.Last(), TEXT("Thin: goal survives"));
+
+			// Endpoints must survive however aggressive the thinning is
+			CheckEq(ThinPath(Line, 1000).Num(), 2, TEXT("Thin: huge N leaves just the endpoints"));
+
+			TArray<FIntPoint> Pair;
+			Pair.Add({ 0, 0 });
+			Pair.Add({ 1, 0 });
+			CheckEq(ThinPath(Pair, 5).Num(), 2, TEXT("Thin: a two point path is left alone"));
+			CheckEq(ThinPath(TArray<FIntPoint>(), 5).Num(), 0, TEXT("Thin: empty stays empty"));
+		}
+
+		// Sixteen queries over ONE shared grid, on real worker threads, compared against
+		// running them one at a time. This is the claim phase 3 was built for, and nothing
+		// until now has actually exercised threads.
+		{
+			FPathGrid Shared;
+			Shared.Resize(60, 60);
+			FRandomStream Rng(5);
+			for (int32 i = 0; i < Shared.Num(); i++)
+			{
+				if (Rng.FRand() < 0.20f)
+				{
+					Shared.SetTileAtIndex(i, 1);
+				}
+			}
+
+			TArray<FGridPathQuery> Queries;
+			for (int32 i = 0; i < 16; i++)
+			{
+				FGridPathQuery Q;
+				Q.Start = { i * 3 % 60, 0 };
+				Q.Goal = { 59 - (i * 3 % 60), 59 };
+				Q.Algorithm = (i % 2) ? EPathAlgorithm::JumpPointSearch : EPathAlgorithm::AStar;
+				Shared.SetTile(Q.Start, 0);
+				Shared.SetTile(Q.Goal, 0);
+				Queries.Add(Q);
+			}
+
+			// Reference answers, computed one at a time
+			TArray<FGridPathResult> Sequential;
+			for (const FGridPathQuery& Q : Queries)
+			{
+				Sequential.Add(RunGridPathQuery(Shared, Q));
+			}
+
+			// The same queries at once, all reading the same grid by reference. If anything
+			// in the search wrote to the grid, these would disagree.
+			TArray<TFuture<FGridPathResult>> Futures;
+			for (const FGridPathQuery& Q : Queries)
+			{
+				Futures.Add(Async(EAsyncExecution::ThreadPool, [&Shared, Q]()
+				{
+					return RunGridPathQuery(Shared, Q);
+				}));
+			}
+
+			int32 Matched = 0;
+			int32 Solvable = 0;
+			for (int32 i = 0; i < Futures.Num(); i++)
+			{
+				const FGridPathResult Parallel = Futures[i].Get();
+				const FGridPathResult& Expected = Sequential[i];
+
+				const bool bSame = Parallel.Status == Expected.Status
+					&& Parallel.Cost == Expected.Cost
+					&& Parallel.Path == Expected.Path
+					&& Parallel.Expanded == Expected.Expanded;
+
+				if (bSame)
+				{
+					Matched++;
+				}
+				if (Expected.Status == EPathStepResult::PathFound)
+				{
+					Solvable++;
+				}
+			}
+
+			CheckEq(Matched, Queries.Num(), TEXT("Threads: every parallel result matches its sequential one"));
+			Check(Solvable > 8, TEXT("Threads: enough queries actually found paths"));
 		}
 
 		// Round trip through world space
