@@ -650,6 +650,36 @@ TArray<FIntPoint> ThinPath(const TArray<FIntPoint>& Path, int32 KeepEvery)
 	return Thinned;
 }
 
+int32 FirstBlockedOnPath(const FPathGrid& Grid, const TArray<FIntPoint>& Path,
+	const FGridPathQuery& Query)
+{
+	// Reuse the query's own passability rules, so an agent that ignores walls is not told
+	// its route is blocked by one.
+	FGridSearch Probe;
+	FGridPathQuery Reachability = Query;
+
+	for (int32 i = 0; i < Path.Num(); i++)
+	{
+		const int32 Index = Grid.CoordToIndex(Path[i]);
+
+		if (Index == INDEX_NONE)
+		{
+			return i; // fell off the grid, e.g. it shrank
+		}
+
+		const uint8 Tile = Grid.TileAt(Index);
+		const bool bRestricted = Reachability.RestrictedTiles.Contains(Tile);
+		const bool bIgnored = Reachability.IgnoredTiles.Contains(Tile);
+
+		if (bRestricted || (!bIgnored && !Grid.TileInfoFor(Tile).bPassable))
+		{
+			return i;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
 FGridPathResult RunGridPathQuery(const FPathGrid& Grid, const FGridPathQuery& Query,
 	int32 KeepEvery, int32 MaxIterations)
 {

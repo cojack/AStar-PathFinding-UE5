@@ -298,3 +298,15 @@ private:
  */
 ASTARPATHFINDING_API FGridPathResult RunGridPathQuery(const FPathGrid& Grid,
 	const FGridPathQuery& Query, int32 KeepEvery = 1, int32 MaxIterations = 10000000);
+
+
+/**
+ * Index of the first point on Path the query can no longer enter, or INDEX_NONE if the path
+ * is still walkable end to end. Pure, so it is testable and callable from any thread.
+ *
+ * Note a thinned path only samples the route, so this sees the sampled points and can miss a
+ * block between two of them. Re-planning on a false negative is cheap; claiming a cut route
+ * is fine is not, which is why the manager keeps the full path and hands out the thinned one.
+ */
+ASTARPATHFINDING_API int32 FirstBlockedOnPath(const FPathGrid& Grid, const TArray<FIntPoint>& Path,
+	const FGridPathQuery& Query);

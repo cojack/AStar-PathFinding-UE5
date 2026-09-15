@@ -3,6 +3,9 @@
 #include "CoreMinimal.h"
 #include "PathFinding.h"
 #include "Async/Async.h"
+#include "GridPathManager.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -851,6 +854,109 @@ namespace PathFindingChecks
 
 			CheckEq(Matched, Queries.Num(), TEXT("Threads: every parallel result matches its sequential one"));
 			Check(Solvable > 8, TEXT("Threads: enough queries actually found paths"));
+		}
+
+		// Detecting that terrain changes have cut a route
+		{
+			FPathGrid G;
+			G.SetTileTable({ FPathTileInfo(1, true, FColor::White),
+							 FPathTileInfo(1, false, FColor::Black),
+							 FPathTileInfo(1, true, FColor::Orange) });  // 2 = door
+			G.Resize(10, 3);
+
+			TArray<FIntPoint> Route;
+			for (int32 x = 0; x < 10; x++)
+			{
+				Route.Add({ x, 1 });
+			}
+
+			FGridPathQuery Q;
+			Q.Start = { 0, 1 };
+			Q.Goal = { 9, 1 };
+
+			CheckEq(FirstBlockedOnPath(G, Route, Q), INDEX_NONE, TEXT("Blocked: clear route is clear"));
+
+			G.SetTile({ 4, 1 }, 1);
+			CheckEq(FirstBlockedOnPath(G, Route, Q), 4, TEXT("Blocked: reports the first bad cell"));
+
+			// Two blocks: it must report the earlier one, not just any
+			G.SetTile({ 7, 1 }, 1);
+			CheckEq(FirstBlockedOnPath(G, Route, Q), 4, TEXT("Blocked: reports the earliest bad cell"));
+
+			// An agent that ignores walls is not told its route is cut by one
+			Q.IgnoredTiles = { 1 };
+			CheckEq(FirstBlockedOnPath(G, Route, Q), INDEX_NONE, TEXT("Blocked: ignored tiles do not cut a route"));
+			Q.IgnoredTiles.Empty();
+
+			// A restriction cuts a route even through a perfectly passable tile
+			G.SetTile({ 4, 1 }, 0);
+			G.SetTile({ 7, 1 }, 2);
+			Q.RestrictedTiles = { 2 };
+			CheckEq(FirstBlockedOnPath(G, Route, Q), 7, TEXT("Blocked: restricted tiles cut a route"));
+			Q.RestrictedTiles.Empty();
+
+			// A point that is no longer on the grid at all
+			TArray<FIntPoint> OffGrid = Route;
+			OffGrid.Add({ 99, 99 });
+			CheckEq(FirstBlockedOnPath(G, OffGrid, Q), 10, TEXT("Blocked: off-grid point is blocked"));
+		}
+
+		// The manager's actor registry, exercised against a real world and real actors
+		{
+			UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+			Check(World != nullptr, TEXT("Registry: created a world"));
+
+			if (World)
+			{
+				UGridPathManager* Manager = World->GetSubsystem<UGridPathManager>();
+				Check(Manager != nullptr, TEXT("Registry: world subsystem exists"));
+
+				if (Manager)
+				{
+					Manager->ConfigureGrid(10, 3, nullptr, 100.f, FVector::ZeroVector);
+
+					AActor* Walker = World->SpawnActor<AActor>();
+					Check(Walker != nullptr, TEXT("Registry: spawned an actor"));
+
+					if (Walker)
+					{
+						TArray<FIntPoint> Route;
+						for (int32 x = 0; x < 10; x++)
+						{
+							Route.Add({ x, 1 });
+						}
+
+						Check(!Manager->IsActorRegistered(Walker), TEXT("Registry: unknown actor is not registered"));
+
+						Manager->RegisterActorPath(Walker, Route, {}, {});
+						Check(Manager->IsActorRegistered(Walker), TEXT("Registry: registers"));
+						CheckEq(Manager->GetRegisteredActorCount(), 1, TEXT("Registry: counts one"));
+						CheckEq(Manager->GetActorPath(Walker).Num(), 10, TEXT("Registry: stores the path"));
+
+						// Nothing blocked yet
+						CheckEq(Manager->RevalidateActorPaths().Num(), 0, TEXT("Registry: clear route is not flagged"));
+
+						// Drop a wall on the route: the actor must be reported
+						TArray<FIntPoint> Wall;
+						Wall.Add({ 5, 1 });
+						Manager->UpdateWalkableTiles(Wall, 1);
+						CheckEq(Manager->RevalidateActorPaths().Num(), 1, TEXT("Registry: cut route is flagged"));
+
+						// Re-planning from the actor's own position must route around it
+						Walker->SetActorLocation(Manager->GridToWorld({ 0, 1 }));
+						const FGridPathResult Replanned = Manager->ReplanActorPath(Walker);
+						Check(Replanned.Status == EPathStepResult::PathFound, TEXT("Registry: re-plan finds a way round"));
+						Check(!Replanned.Path.Contains(FIntPoint(5, 1)), TEXT("Registry: re-plan avoids the new wall"));
+						CheckEq(Manager->RevalidateActorPaths().Num(), 0, TEXT("Registry: re-planned route is clear"));
+
+						Manager->UnRegisterActorPath(Walker);
+						Check(!Manager->IsActorRegistered(Walker), TEXT("Registry: unregisters"));
+						CheckEq(Manager->GetRegisteredActorCount(), 0, TEXT("Registry: count returns to zero"));
+					}
+				}
+
+				World->DestroyWorld(false);
+			}
 		}
 
 		// Round trip through world space
