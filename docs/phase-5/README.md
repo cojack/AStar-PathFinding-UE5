@@ -102,6 +102,20 @@ Measured work, same grid, same optimal cost:
 | A* around a wall | 196 | 45 | 396 |
 | JPS around a wall | 5 | 0 | 396 |
 
+## Images
+
+`-run=PathFindingTest` writes a PNG per scenario to `Saved/PathFindingTests/`
+(`astar-open`, `jps-open`, `astar-wall`, `jps-wall`, `reported-maze`, `weighted-mud`).
+`FImageUtils::SaveImageByExtension` is CPU-side encoding, so no GPU or PIE is needed.
+
+`astar-wall.png` is the clearest artefact this project has produced: A* colours the entire
+region above the wall red before the path emerges, which is the reported "it checks every
+single square", drawn. `jps-wall.png` is the same grid and the same cost with five expansions.
+
+`weighted-mud.png` covers what cannot currently be seen in PIE at all, since the demo has no
+way to paint non-wall tiles: the path runs along the edge of the mud band and cuts down past
+its end rather than crossing it.
+
 ## Not done
 
 PIE with JPS selected. The algorithm is verified against A\* far more thoroughly than eyes

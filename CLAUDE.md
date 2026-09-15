@@ -78,6 +78,12 @@ Note `Automation RunTests` does **not** complete headlessly in this environment;
 after `FindWorkersResponseMessage`, and does so for stock engine tests too, so it is the
 harness and not this project. That is why the commandlet exists.
 
+`-run=PathFindingTest` also writes PNGs of each scenario to
+`Saved/PathFindingTests/` — cyan start, magenta goal, dark walls, red expanded, green queued,
+blue final path, tile colours underneath. Encoding is pure CPU, so it works under `-nullrhi`.
+They are the fastest way to see what a change did to the *shape* of the search, which the
+pass/fail line cannot show.
+
 To confirm a change actually reached the binary, remember `TEXT()` literals are **wide**:
 `strings -a` cannot see them. Use `strings -a -e l`.
 
