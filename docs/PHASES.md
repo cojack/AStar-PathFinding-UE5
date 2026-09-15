@@ -101,7 +101,25 @@ Consequences for the roadmap:
 - The binary heap deferred in `SelectLightest` is now justified by measurement rather than
   suspicion. Constant-ish cost per expansion would put 500x500 near 30 ms instead of 261 ms.
 
+## Where the time is not
+
+Measured, so it stops being speculation:
+
+- **Blueprint is not the overhead.** The benchmarks call `FGridSearch` directly from a
+  commandlet - no BP, no UObject. Going through `UPathFinding::SolveAll`, which is what a
+  Blueprint node calls, measured 1.0-1.1x the raw core at 100x100 and 200x200. A `UFUNCTION`
+  invocation is microseconds against a search measured in milliseconds.
+- **The per-step `OnStepped` broadcast is free** when nothing is bound, which was the
+  suspected culprit and is not.
+
 ## Known gaps
+
+- **The visualiser will dominate a large grid in PIE, and it is not the pathfinder.**
+  `DrawCells` issues a `DrawDebugPlane` and a `DrawDebugString` per cell every tick, whether
+  or not a search is running. At 200x200 that is 40,000 debug planes per frame. Unmeasured -
+  debug drawing needs a real RHI and the checks run under `-nullrhi` - but structural.
+  Anyone benchmarking in PIE must turn off `Draw Cells` / `Draw Weights` /
+  `Draw Parent Arrows` first, or they will measure the renderer.
 
 - ~~The automation tests have never executed.~~ **Closed 2026-09-15** by the commandlet in
   [ADR-0014]. `-run=PathFindingTest` passes, before and after the plugin move. The automation
