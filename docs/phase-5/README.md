@@ -112,6 +112,11 @@ Measured work, same grid, same optimal cost:
 region above the wall red before the path emerges, which is the reported "it checks every
 single square", drawn. `jps-wall.png` is the same grid and the same cost with five expansions.
 
+`serpentine-astar.png` and `serpentine-weighted.png` are the reported "why does it check the
+whole empty space" case: a 20x12 grid where three walls force a route 67% longer than the
+straight-line estimate. At weight 1.0 the middle band is solid red; at 1.5 the same band is
+green - queued and never expanded. Same cost, 128 expansions against 102.
+
 `weighted-mud.png` covers what cannot currently be seen in PIE at all, since the demo has no
 way to paint non-wall tiles: the path runs along the edge of the mud band and cuts down past
 its end rather than crossing it.

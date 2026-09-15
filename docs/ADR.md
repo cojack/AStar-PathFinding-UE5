@@ -427,3 +427,31 @@ would be worse than one that searches too hard.
 
 This does not replace JPS, which expands 5 cells on the same wall grid at the *optimal* cost.
 The weight exists for grids where JPS does not apply, notably 4-connected ones.
+
+### Why the tied region is so large
+
+A follow-up report showed hundreds of cells displaying an identical weight, and asked why the
+search covers the whole empty middle. The answer is a property of the octile metric rather
+than anything in the implementation: with diagonal movement, straight and diagonal steps can
+be interleaved in any order, so there is not one shortest route but a very large family of
+them, and **every cell on any of them has the same f**. The heuristic cannot separate them.
+
+Reproduced as `serpentine-astar`, a 20x12 grid with three walls whose gaps alternate ends:
+
+| | |
+| --- | --- |
+| Direct distance | 234 |
+| Real route | 390, 67% longer |
+| Cells tied at exactly the direct distance | 91 of 240 |
+| Cells any admissible A* must expand | 122 |
+| What A* expanded | 128 |
+| With `HeuristicWeight` 1.5 | 102, still cost 390 here |
+
+The tied blob is 38% of the grid, and because the walls make the real answer 67% more
+expensive than the estimate, all of it sits below the final cost and has to be eliminated.
+The worse the detour, the larger the region that must be ruled out - which is why obstacle-
+heavy maps look worst.
+
+A weighted run can drop *below* the admissible floor (102 against 122) precisely because it is
+no longer admissible; it happened to keep the optimal cost on this map, which is luck, not a
+guarantee.

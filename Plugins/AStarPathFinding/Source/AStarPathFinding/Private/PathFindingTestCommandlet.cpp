@@ -93,6 +93,31 @@ int32 UPathFindingTestCommandlet::Main(const FString& Params)
 		MazeQuery.bAllowDiagonal = false;
 		Shot(TEXT("reported-maze"), Maze, MazeQuery);
 
+		// A serpentine forcing a long detour: the reported "why does it check the whole
+		// empty space" case. Direct distance 234, real route 390, so every cell whose
+		// estimate is under 390 has to be ruled out first.
+		const auto Serpentine = []()
+		{
+			FPathGrid G;
+			G.Resize(20, 12);
+			for (int32 y = 0; y <= 9; y++)  { G.SetBlocked({ 15, y }, true); }
+			for (int32 y = 2; y <= 11; y++) { G.SetBlocked({ 10, y }, true); }
+			for (int32 y = 0; y <= 9; y++)  { G.SetBlocked({ 5, y }, true); }
+			return G;
+		};
+
+		FGridPathQuery Snake;
+		Snake.Start = { 19, 0 };
+		Snake.Goal = { 0, 11 };
+
+		FPathGrid Snake1 = Serpentine();
+		Shot(TEXT("serpentine-astar"), Snake1, Snake);
+
+		FPathGrid Snake2 = Serpentine();
+		Snake.HeuristicWeight = 1.5f;
+		Shot(TEXT("serpentine-weighted"), Snake2, Snake);
+		Snake.HeuristicWeight = 1.0f;
+
 		// Weighted terrain: mud across the direct row
 		FPathGrid Mud;
 		Mud.SetTileTable({ FPathTileInfo(1, true, FColor::White),
